@@ -36,26 +36,10 @@ jobs:
 
       - name: Create user config
         env:
-          EMAIL_ADDR: ${{ secrets.GARMIN_EMAIL }}
+          USER_CONFIG_B64: ${{ secrets.USER_CONFIG_B64 }}
         run: |
           mkdir -p data
-          cat > data/user_config.json << EOF
-          {
-            "email": "${EMAIL_ADDR}",
-            "name": "Sharad",
-            "goal_type": "marathon",
-            "goal_target": "sub-4-hour",
-            "goal_time_minutes": 240,
-            "goal_date": "2026-03-05",
-            "current_weekly_mileage": 35,
-            "experience_level": "intermediate",
-            "preferred_long_run_day": "saturday",
-            "email_day": "sunday",
-            "email_time": "07:00",
-            "timezone": "America/Los_Angeles"
-          }
-          EOF
-          cat data/user_config.json
+          python3 -c "import os,base64; open('data/user_config.json','w').write(base64.b64decode(os.environ['USER_CONFIG_B64'].strip()).decode())"
 
       - name: Fetch Garmin data and send email
         env:

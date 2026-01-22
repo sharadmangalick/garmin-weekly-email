@@ -75,11 +75,18 @@ Add these secrets to your GitHub repo (`Settings > Secrets > Actions`):
 | `GARMIN_EMAIL` | Your Garmin Connect email |
 | `GARMIN_PASSWORD` | Your Garmin Connect password |
 | `GMAIL_CREDENTIALS_B64` | Base64-encoded Gmail OAuth credentials |
+| `USER_CONFIG_B64` | Base64-encoded user configuration |
 
-### Get Gmail Credentials (Base64)
+### Generate Base64 Secrets
 
+**Gmail credentials:**
 ```bash
 cat ~/.gmail-mcp/credentials.json | base64 | tr -d '\n'
+```
+
+**User config:**
+```bash
+cat data/user_config.json | base64 | tr -d '\n'
 ```
 
 ### Schedule
