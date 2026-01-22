@@ -5,8 +5,35 @@ on:
   schedule:
     - cron: '0 14 * * 0'
 
-  # Allow manual trigger
+  # Allow manual trigger with optional goal override
   workflow_dispatch:
+    inputs:
+      goal_type:
+        description: 'Goal type (leave empty to use saved config)'
+        required: false
+        type: choice
+        options:
+          - ''
+          - '5k'
+          - '10k'
+          - 'half_marathon'
+          - 'marathon'
+          - 'ultra'
+          - 'build_mileage'
+          - 'maintain_fitness'
+          - 'base_building'
+      goal_date:
+        description: 'Race date YYYY-MM-DD (for race goals only)'
+        required: false
+        type: string
+      goal_time_minutes:
+        description: 'Target time in minutes (for race goals only)'
+        required: false
+        type: number
+      current_weekly_mileage:
+        description: 'Current weekly mileage (leave empty to use saved)'
+        required: false
+        type: number
 
 jobs:
   send-weekly-email:
@@ -45,6 +72,11 @@ jobs:
         env:
           GARMIN_EMAIL: ${{ secrets.GARMIN_EMAIL }}
           GARMIN_PASSWORD: ${{ secrets.GARMIN_PASSWORD }}
+          # Optional goal overrides from workflow_dispatch
+          GOAL_TYPE_OVERRIDE: ${{ github.event.inputs.goal_type }}
+          GOAL_DATE_OVERRIDE: ${{ github.event.inputs.goal_date }}
+          GOAL_TIME_OVERRIDE: ${{ github.event.inputs.goal_time_minutes }}
+          WEEKLY_MILEAGE_OVERRIDE: ${{ github.event.inputs.current_weekly_mileage }}
         run: |
           python automated_weekly_email.py
 

@@ -1,0 +1,213 @@
+{
+  "race_goals": {
+    "5k": {
+      "name": "5K Race",
+      "distance_miles": 3.1,
+      "category": "race",
+      "description": "5 kilometer race - speed-focused training",
+      "phases": {
+        "base": {"min_weeks": 8, "multiplier": 0.85, "long_run_pct": 0.25, "long_run_max": 8},
+        "build": {"min_weeks": 4, "multiplier": 1.0, "long_run_pct": 0.28, "long_run_max": 10},
+        "peak": {"min_weeks": 2, "multiplier": 1.05, "long_run_pct": 0.25, "long_run_max": 10},
+        "taper": {"min_weeks": 1, "multiplier": 0.6, "long_run_pct": 0.25, "long_run_max": 6},
+        "race_week": {"min_weeks": 0, "multiplier": 0.3, "long_run_pct": 0.0, "long_run_max": 3}
+      },
+      "suggested_weekly_mileage": {
+        "beginner": 15,
+        "intermediate": 25,
+        "advanced": 35
+      },
+      "workout_types": ["tempo", "intervals", "fartlek"]
+    },
+    "10k": {
+      "name": "10K Race",
+      "distance_miles": 6.2,
+      "category": "race",
+      "description": "10 kilometer race - speed and endurance",
+      "phases": {
+        "base": {"min_weeks": 8, "multiplier": 0.85, "long_run_pct": 0.28, "long_run_max": 10},
+        "build": {"min_weeks": 4, "multiplier": 1.0, "long_run_pct": 0.30, "long_run_max": 12},
+        "peak": {"min_weeks": 2, "multiplier": 1.05, "long_run_pct": 0.28, "long_run_max": 12},
+        "taper": {"min_weeks": 1, "multiplier": 0.6, "long_run_pct": 0.25, "long_run_max": 8},
+        "race_week": {"min_weeks": 0, "multiplier": 0.3, "long_run_pct": 0.0, "long_run_max": 4}
+      },
+      "suggested_weekly_mileage": {
+        "beginner": 20,
+        "intermediate": 30,
+        "advanced": 45
+      },
+      "workout_types": ["tempo", "intervals", "threshold"]
+    },
+    "half_marathon": {
+      "name": "Half Marathon",
+      "distance_miles": 13.1,
+      "category": "race",
+      "description": "Half marathon - endurance with speed",
+      "phases": {
+        "base": {"min_weeks": 10, "multiplier": 0.85, "long_run_pct": 0.30, "long_run_max": 12},
+        "build": {"min_weeks": 5, "multiplier": 1.0, "long_run_pct": 0.32, "long_run_max": 14},
+        "peak": {"min_weeks": 2, "multiplier": 1.08, "long_run_pct": 0.30, "long_run_max": 16},
+        "taper": {"min_weeks": 2, "multiplier": 0.65, "long_run_pct": 0.28, "long_run_max": 10},
+        "race_week": {"min_weeks": 0, "multiplier": 0.3, "long_run_pct": 0.0, "long_run_max": 5}
+      },
+      "suggested_weekly_mileage": {
+        "beginner": 25,
+        "intermediate": 35,
+        "advanced": 50
+      },
+      "workout_types": ["tempo", "threshold", "long_run_with_pace"]
+    },
+    "marathon": {
+      "name": "Marathon",
+      "distance_miles": 26.2,
+      "category": "race",
+      "description": "Full marathon - maximum endurance",
+      "phases": {
+        "base": {"min_weeks": 12, "multiplier": 0.85, "long_run_pct": 0.30, "long_run_max": 14},
+        "build": {"min_weeks": 6, "multiplier": 1.0, "long_run_pct": 0.32, "long_run_max": 18},
+        "peak": {"min_weeks": 3, "multiplier": 1.1, "long_run_pct": 0.30, "long_run_max": 22},
+        "taper": {"min_weeks": 3, "multiplier": 0.6, "long_run_pct": 0.28, "long_run_max": 12},
+        "race_week": {"min_weeks": 0, "multiplier": 0.3, "long_run_pct": 0.0, "long_run_max": 6}
+      },
+      "suggested_weekly_mileage": {
+        "beginner": 30,
+        "intermediate": 45,
+        "advanced": 65
+      },
+      "workout_types": ["tempo", "long_run_with_pace", "marathon_pace"]
+    },
+    "ultra": {
+      "name": "Ultra Marathon",
+      "distance_miles": 50,
+      "category": "race",
+      "description": "Ultra marathon (50K+) - extreme endurance",
+      "phases": {
+        "base": {"min_weeks": 16, "multiplier": 0.80, "long_run_pct": 0.28, "long_run_max": 18},
+        "build": {"min_weeks": 8, "multiplier": 1.0, "long_run_pct": 0.30, "long_run_max": 24},
+        "peak": {"min_weeks": 4, "multiplier": 1.05, "long_run_pct": 0.28, "long_run_max": 30},
+        "taper": {"min_weeks": 3, "multiplier": 0.55, "long_run_pct": 0.25, "long_run_max": 15},
+        "race_week": {"min_weeks": 0, "multiplier": 0.25, "long_run_pct": 0.0, "long_run_max": 6}
+      },
+      "suggested_weekly_mileage": {
+        "beginner": 40,
+        "intermediate": 55,
+        "advanced": 80
+      },
+      "workout_types": ["long_run", "back_to_back_long", "easy_volume"]
+    },
+    "custom": {
+      "name": "Custom Race Distance",
+      "distance_miles": null,
+      "category": "race",
+      "description": "Custom distance race - user-specified",
+      "phases": {
+        "base": {"min_weeks": 10, "multiplier": 0.85, "long_run_pct": 0.28, "long_run_max": 14},
+        "build": {"min_weeks": 5, "multiplier": 1.0, "long_run_pct": 0.30, "long_run_max": 16},
+        "peak": {"min_weeks": 2, "multiplier": 1.05, "long_run_pct": 0.28, "long_run_max": 18},
+        "taper": {"min_weeks": 2, "multiplier": 0.6, "long_run_pct": 0.25, "long_run_max": 10},
+        "race_week": {"min_weeks": 0, "multiplier": 0.3, "long_run_pct": 0.0, "long_run_max": 5}
+      },
+      "suggested_weekly_mileage": {
+        "beginner": 25,
+        "intermediate": 40,
+        "advanced": 55
+      },
+      "workout_types": ["tempo", "threshold", "long_run"]
+    }
+  },
+  "non_race_goals": {
+    "build_mileage": {
+      "name": "Build Weekly Mileage",
+      "category": "non_race",
+      "description": "Gradually increase weekly running volume",
+      "phases": {
+        "adaptation": {"weeks": 3, "multiplier": 0.85, "long_run_pct": 0.28},
+        "build": {"weeks": 3, "multiplier": 1.0, "long_run_pct": 0.30},
+        "consolidation": {"weeks": 2, "multiplier": 0.9, "long_run_pct": 0.28}
+      },
+      "progression_rate": 0.10,
+      "recovery_week_frequency": 4,
+      "workout_types": ["easy", "long_run"]
+    },
+    "maintain_fitness": {
+      "name": "Maintain Fitness",
+      "category": "non_race",
+      "description": "Maintain current running fitness",
+      "phases": {
+        "maintenance": {"weeks": 4, "multiplier": 1.0, "long_run_pct": 0.28}
+      },
+      "progression_rate": 0.0,
+      "recovery_week_frequency": 4,
+      "workout_types": ["easy", "tempo", "long_run"]
+    },
+    "base_building": {
+      "name": "Base Building",
+      "category": "non_race",
+      "description": "Build aerobic foundation with easy running",
+      "phases": {
+        "foundation": {"weeks": 4, "multiplier": 0.80, "long_run_pct": 0.25},
+        "development": {"weeks": 4, "multiplier": 0.95, "long_run_pct": 0.28},
+        "strengthening": {"weeks": 4, "multiplier": 1.0, "long_run_pct": 0.30}
+      },
+      "progression_rate": 0.08,
+      "recovery_week_frequency": 4,
+      "workout_types": ["easy", "long_run", "strides"]
+    },
+    "return_from_injury": {
+      "name": "Return from Injury",
+      "category": "non_race",
+      "description": "Gradual return to running after injury",
+      "phases": {
+        "introduction": {"weeks": 2, "multiplier": 0.40, "long_run_pct": 0.20},
+        "progression": {"weeks": 4, "multiplier": 0.60, "long_run_pct": 0.22},
+        "rebuilding": {"weeks": 4, "multiplier": 0.80, "long_run_pct": 0.25},
+        "return": {"weeks": 2, "multiplier": 1.0, "long_run_pct": 0.28}
+      },
+      "progression_rate": 0.05,
+      "recovery_week_frequency": 2,
+      "workout_types": ["easy", "walk_run"]
+    }
+  },
+  "pace_calculations": {
+    "5k": {
+      "easy_offset_min": 1.5,
+      "easy_offset_max": 2.5,
+      "tempo_offset_min": 0.25,
+      "tempo_offset_max": 0.5,
+      "recovery_offset_min": 2.5,
+      "recovery_offset_max": 3.5
+    },
+    "10k": {
+      "easy_offset_min": 1.25,
+      "easy_offset_max": 2.25,
+      "tempo_offset_min": 0.15,
+      "tempo_offset_max": 0.35,
+      "recovery_offset_min": 2.25,
+      "recovery_offset_max": 3.25
+    },
+    "half_marathon": {
+      "easy_offset_min": 1.0,
+      "easy_offset_max": 2.0,
+      "tempo_offset_min": 0.0,
+      "tempo_offset_max": 0.25,
+      "recovery_offset_min": 2.0,
+      "recovery_offset_max": 3.0
+    },
+    "marathon": {
+      "easy_offset_min": 1.0,
+      "easy_offset_max": 2.0,
+      "tempo_offset_min": 0.0,
+      "tempo_offset_max": 0.25,
+      "recovery_offset_min": 2.0,
+      "recovery_offset_max": 3.0
+    },
+    "default": {
+      "easy_offset_min": 1.0,
+      "easy_offset_max": 2.0,
+      "tempo_offset_min": 0.0,
+      "tempo_offset_max": 0.25,
+      "recovery_offset_min": 2.0,
+      "recovery_offset_max": 3.0
+    }
+  }
+}

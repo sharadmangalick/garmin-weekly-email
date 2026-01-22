@@ -12,6 +12,7 @@ Schedule with launchd or cron to run every Sunday morning.
 
 import json
 import logging
+import os
 import sys
 import base64
 from datetime import datetime
@@ -141,6 +142,51 @@ def send_email(to_address: str, subject: str, html_body: str) -> bool:
         return False
 
 
+def apply_goal_overrides(user_config: UserConfig) -> None:
+    """Apply goal overrides from environment variables (set via workflow_dispatch)."""
+    overrides = {}
+
+    # Check for goal type override
+    goal_type = os.environ.get('GOAL_TYPE_OVERRIDE', '').strip()
+    if goal_type:
+        overrides['goal_type'] = goal_type
+        # Set goal_category based on goal_type
+        non_race_goals = ['build_mileage', 'maintain_fitness', 'base_building', 'return_from_injury']
+        overrides['goal_category'] = 'non_race' if goal_type in non_race_goals else 'race'
+        logger.info(f"Override: goal_type={goal_type}")
+
+    # Check for goal date override (race goals only)
+    goal_date = os.environ.get('GOAL_DATE_OVERRIDE', '').strip()
+    if goal_date:
+        overrides['goal_date'] = goal_date
+        logger.info(f"Override: goal_date={goal_date}")
+
+    # Check for goal time override (race goals only)
+    goal_time = os.environ.get('GOAL_TIME_OVERRIDE', '').strip()
+    if goal_time:
+        try:
+            overrides['goal_time_minutes'] = int(goal_time)
+            logger.info(f"Override: goal_time_minutes={goal_time}")
+        except ValueError:
+            logger.warning(f"Invalid goal_time_minutes override: {goal_time}")
+
+    # Check for weekly mileage override
+    weekly_mileage = os.environ.get('WEEKLY_MILEAGE_OVERRIDE', '').strip()
+    if weekly_mileage:
+        try:
+            overrides['current_weekly_mileage'] = int(weekly_mileage)
+            logger.info(f"Override: current_weekly_mileage={weekly_mileage}")
+        except ValueError:
+            logger.warning(f"Invalid weekly mileage override: {weekly_mileage}")
+
+    # Apply overrides if any
+    if overrides:
+        logger.info(f"Applying {len(overrides)} goal override(s)")
+        user_config._config.update(overrides)
+    else:
+        logger.info("No goal overrides specified, using saved config")
+
+
 def main():
     """Main entry point for automated weekly email."""
     logger.info("=" * 50)
@@ -155,9 +201,14 @@ def main():
             logger.error("User not configured. Run 'python main.py email setup' first.")
             sys.exit(1)
 
+        # Apply any goal overrides from environment variables
+        apply_goal_overrides(user_config)
+
         logger.info(f"User: {user_config.name} ({user_config.email})")
         logger.info(f"Goal: {user_config.goal_target} {user_config.goal_type}")
-        logger.info(f"Weeks to race: {user_config.weeks_until_race()}")
+        logger.info(f"Goal category: {user_config.goal_category}")
+        if user_config.is_race_goal():
+            logger.info(f"Weeks to race: {user_config.weeks_until_race()}")
 
         # Step 1: Fetch Garmin data
         fetch_garmin_data(days=14)

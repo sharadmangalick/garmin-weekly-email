@@ -1,0 +1,757 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Training Goals Wizard - Garmin Weekly Email</title>
+    <style>
+        :root {
+            --primary: #667eea;
+            --primary-dark: #764ba2;
+            --success: #28a745;
+            --warning: #ffc107;
+            --danger: #dc3545;
+            --gray: #6c757d;
+            --light: #f8f9fa;
+            --dark: #343a40;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 600px;
+            margin: 0 auto;
+        }
+
+        .card {
+            background: white;
+            border-radius: 16px;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2);
+            overflow: hidden;
+        }
+
+        .header {
+            background: linear-gradient(135deg, var(--primary) 0%, var(--primary-dark) 100%);
+            color: white;
+            padding: 30px;
+            text-align: center;
+        }
+
+        .header h1 {
+            font-size: 24px;
+            margin-bottom: 8px;
+        }
+
+        .header p {
+            opacity: 0.9;
+            font-size: 14px;
+        }
+
+        .form-body {
+            padding: 30px;
+        }
+
+        .step {
+            display: none;
+        }
+
+        .step.active {
+            display: block;
+        }
+
+        .step-indicator {
+            display: flex;
+            justify-content: center;
+            margin-bottom: 30px;
+            gap: 8px;
+        }
+
+        .step-dot {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            background: #ddd;
+            transition: background 0.3s;
+        }
+
+        .step-dot.active {
+            background: var(--primary);
+        }
+
+        .step-dot.completed {
+            background: var(--success);
+        }
+
+        .form-group {
+            margin-bottom: 24px;
+        }
+
+        label {
+            display: block;
+            font-weight: 600;
+            margin-bottom: 8px;
+            color: var(--dark);
+        }
+
+        .label-hint {
+            font-weight: normal;
+            color: var(--gray);
+            font-size: 13px;
+        }
+
+        input, select {
+            width: 100%;
+            padding: 12px 16px;
+            border: 2px solid #e9ecef;
+            border-radius: 8px;
+            font-size: 16px;
+            transition: border-color 0.3s;
+        }
+
+        input:focus, select:focus {
+            outline: none;
+            border-color: var(--primary);
+        }
+
+        .goal-type-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 12px;
+        }
+
+        .goal-type-option {
+            border: 2px solid #e9ecef;
+            border-radius: 12px;
+            padding: 16px;
+            cursor: pointer;
+            transition: all 0.3s;
+            text-align: center;
+        }
+
+        .goal-type-option:hover {
+            border-color: var(--primary);
+            background: #f8f9ff;
+        }
+
+        .goal-type-option.selected {
+            border-color: var(--primary);
+            background: linear-gradient(135deg, rgba(102, 126, 234, 0.1) 0%, rgba(118, 75, 162, 0.1) 100%);
+        }
+
+        .goal-type-option input {
+            display: none;
+        }
+
+        .goal-type-option .icon {
+            font-size: 32px;
+            margin-bottom: 8px;
+        }
+
+        .goal-type-option .name {
+            font-weight: 600;
+            color: var(--dark);
+        }
+
+        .goal-type-option .desc {
+            font-size: 12px;
+            color: var(--gray);
+            margin-top: 4px;
+        }
+
+        .time-input-group {
+            display: flex;
+            gap: 12px;
+            align-items: center;
+        }
+
+        .time-input-group input {
+            width: 80px;
+            text-align: center;
+        }
+
+        .time-input-group span {
+            color: var(--gray);
+        }
+
+        .pace-display {
+            background: var(--light);
+            padding: 12px 16px;
+            border-radius: 8px;
+            margin-top: 8px;
+            font-size: 14px;
+        }
+
+        .pace-display strong {
+            color: var(--primary);
+        }
+
+        .btn {
+            padding: 14px 28px;
+            border: none;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, var(--primary) 0%, var(--primary-dark) 100%);
+            color: white;
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+        }
+
+        .btn-secondary {
+            background: var(--light);
+            color: var(--dark);
+        }
+
+        .btn-secondary:hover {
+            background: #e9ecef;
+        }
+
+        .btn-group {
+            display: flex;
+            justify-content: space-between;
+            margin-top: 30px;
+        }
+
+        .output-section {
+            background: var(--light);
+            border-radius: 12px;
+            padding: 20px;
+            margin-top: 20px;
+        }
+
+        .output-section h3 {
+            margin-bottom: 12px;
+            color: var(--dark);
+        }
+
+        .config-output {
+            background: #1e1e1e;
+            color: #d4d4d4;
+            padding: 16px;
+            border-radius: 8px;
+            font-family: 'Monaco', 'Menlo', monospace;
+            font-size: 12px;
+            overflow-x: auto;
+            white-space: pre-wrap;
+            word-break: break-all;
+        }
+
+        .copy-btn {
+            margin-top: 12px;
+            width: 100%;
+        }
+
+        .copy-btn.copied {
+            background: var(--success);
+        }
+
+        .instructions {
+            margin-top: 20px;
+            padding: 16px;
+            background: #fff3cd;
+            border-radius: 8px;
+            border-left: 4px solid var(--warning);
+        }
+
+        .instructions h4 {
+            color: #856404;
+            margin-bottom: 8px;
+        }
+
+        .instructions ol {
+            margin-left: 20px;
+            color: #856404;
+            font-size: 14px;
+        }
+
+        .instructions li {
+            margin-bottom: 4px;
+        }
+
+        .instructions code {
+            background: rgba(0,0,0,0.1);
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-family: monospace;
+        }
+
+        .hidden {
+            display: none;
+        }
+
+        .summary-item {
+            display: flex;
+            justify-content: space-between;
+            padding: 8px 0;
+            border-bottom: 1px solid #e9ecef;
+        }
+
+        .summary-item:last-child {
+            border-bottom: none;
+        }
+
+        .summary-label {
+            color: var(--gray);
+        }
+
+        .summary-value {
+            font-weight: 600;
+            color: var(--dark);
+        }
+
+        @media (max-width: 480px) {
+            .goal-type-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .btn-group {
+                flex-direction: column;
+                gap: 12px;
+            }
+
+            .btn {
+                width: 100%;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="card">
+            <div class="header">
+                <h1>Training Goals Wizard</h1>
+                <p>Configure your running goals in a few simple steps</p>
+            </div>
+
+            <div class="form-body">
+                <div class="step-indicator">
+                    <div class="step-dot active" data-step="1"></div>
+                    <div class="step-dot" data-step="2"></div>
+                    <div class="step-dot" data-step="3"></div>
+                    <div class="step-dot" data-step="4"></div>
+                </div>
+
+                <!-- Step 1: Goal Category -->
+                <div class="step active" data-step="1">
+                    <h2 style="margin-bottom: 20px;">What's your goal?</h2>
+
+                    <div class="goal-type-grid">
+                        <label class="goal-type-option selected" data-category="race">
+                            <input type="radio" name="goal_category" value="race" checked>
+                            <div class="icon">🏁</div>
+                            <div class="name">Race Goal</div>
+                            <div class="desc">Training for a specific race</div>
+                        </label>
+                        <label class="goal-type-option" data-category="non_race">
+                            <input type="radio" name="goal_category" value="non_race">
+                            <div class="icon">📈</div>
+                            <div class="name">Fitness Goal</div>
+                            <div class="desc">Build mileage or maintain</div>
+                        </label>
+                    </div>
+
+                    <div class="btn-group">
+                        <div></div>
+                        <button class="btn btn-primary" onclick="nextStep()">Next →</button>
+                    </div>
+                </div>
+
+                <!-- Step 2: Goal Details (Race) -->
+                <div class="step" data-step="2" id="step-race">
+                    <h2 style="margin-bottom: 20px;">Race Details</h2>
+
+                    <div class="form-group">
+                        <label>Race Distance</label>
+                        <select id="goal_type" onchange="updatePaceDisplay()">
+                            <option value="5k">5K (3.1 miles)</option>
+                            <option value="10k">10K (6.2 miles)</option>
+                            <option value="half_marathon">Half Marathon (13.1 miles)</option>
+                            <option value="marathon" selected>Marathon (26.2 miles)</option>
+                            <option value="ultra">Ultra Marathon (50+ miles)</option>
+                            <option value="custom">Custom Distance</option>
+                        </select>
+                    </div>
+
+                    <div class="form-group hidden" id="custom-distance-group">
+                        <label>Custom Distance (miles)</label>
+                        <input type="number" id="custom_distance" step="0.1" min="1" placeholder="e.g., 15.5" onchange="updatePaceDisplay()">
+                    </div>
+
+                    <div class="form-group">
+                        <label>Target Finish Time <span class="label-hint">(hours : minutes)</span></label>
+                        <div class="time-input-group">
+                            <input type="number" id="goal_hours" min="0" max="24" value="3" onchange="updatePaceDisplay()">
+                            <span>:</span>
+                            <input type="number" id="goal_minutes" min="0" max="59" value="45" onchange="updatePaceDisplay()">
+                        </div>
+                        <div class="pace-display" id="pace-display">
+                            Target pace: <strong>8:35/mile</strong>
+                        </div>
+                    </div>
+
+                    <div class="form-group">
+                        <label>Race Date</label>
+                        <input type="date" id="goal_date" required>
+                    </div>
+
+                    <div class="btn-group">
+                        <button class="btn btn-secondary" onclick="prevStep()">← Back</button>
+                        <button class="btn btn-primary" onclick="nextStep()">Next →</button>
+                    </div>
+                </div>
+
+                <!-- Step 2: Goal Details (Non-Race) -->
+                <div class="step" data-step="2" id="step-non-race">
+                    <h2 style="margin-bottom: 20px;">Fitness Goal</h2>
+
+                    <div class="form-group">
+                        <label>Goal Type</label>
+                        <select id="non_race_goal_type">
+                            <option value="build_mileage">Build Weekly Mileage</option>
+                            <option value="maintain_fitness">Maintain Current Fitness</option>
+                            <option value="base_building">Base Building</option>
+                            <option value="return_from_injury">Return from Injury</option>
+                        </select>
+                    </div>
+
+                    <div class="form-group" id="target-mileage-group">
+                        <label>Target Weekly Mileage <span class="label-hint">(what you want to build to)</span></label>
+                        <input type="number" id="target_weekly_mileage" min="5" max="150" placeholder="e.g., 50">
+                    </div>
+
+                    <div class="btn-group">
+                        <button class="btn btn-secondary" onclick="prevStep()">← Back</button>
+                        <button class="btn btn-primary" onclick="nextStep()">Next →</button>
+                    </div>
+                </div>
+
+                <!-- Step 3: Training Details -->
+                <div class="step" data-step="3">
+                    <h2 style="margin-bottom: 20px;">Your Training Profile</h2>
+
+                    <div class="form-group">
+                        <label>Current Weekly Mileage</label>
+                        <input type="number" id="current_weekly_mileage" min="5" max="150" value="35" required>
+                    </div>
+
+                    <div class="form-group">
+                        <label>Experience Level</label>
+                        <select id="experience_level">
+                            <option value="beginner">Beginner (< 1 year running)</option>
+                            <option value="intermediate" selected>Intermediate (1-3 years)</option>
+                            <option value="advanced">Advanced (3+ years)</option>
+                        </select>
+                    </div>
+
+                    <div class="form-group">
+                        <label>Preferred Long Run Day</label>
+                        <select id="preferred_long_run_day">
+                            <option value="saturday">Saturday</option>
+                            <option value="sunday" selected>Sunday</option>
+                        </select>
+                    </div>
+
+                    <div class="btn-group">
+                        <button class="btn btn-secondary" onclick="prevStep()">← Back</button>
+                        <button class="btn btn-primary" onclick="nextStep()">Next →</button>
+                    </div>
+                </div>
+
+                <!-- Step 4: User Info & Generate -->
+                <div class="step" data-step="4">
+                    <h2 style="margin-bottom: 20px;">Personal Details</h2>
+
+                    <div class="form-group">
+                        <label>Your Name</label>
+                        <input type="text" id="name" placeholder="e.g., Alex" required>
+                    </div>
+
+                    <div class="form-group">
+                        <label>Email Address <span class="label-hint">(for receiving training emails)</span></label>
+                        <input type="email" id="email" placeholder="your@email.com" required>
+                    </div>
+
+                    <div class="form-group">
+                        <label>Timezone</label>
+                        <select id="timezone">
+                            <option value="America/Los_Angeles">Pacific Time (PT)</option>
+                            <option value="America/Denver">Mountain Time (MT)</option>
+                            <option value="America/Chicago">Central Time (CT)</option>
+                            <option value="America/New_York">Eastern Time (ET)</option>
+                            <option value="Europe/London">London (GMT)</option>
+                            <option value="Europe/Paris">Central European (CET)</option>
+                            <option value="Asia/Tokyo">Tokyo (JST)</option>
+                        </select>
+                    </div>
+
+                    <div class="btn-group">
+                        <button class="btn btn-secondary" onclick="prevStep()">← Back</button>
+                        <button class="btn btn-primary" onclick="generateConfig()">Generate Config</button>
+                    </div>
+                </div>
+
+                <!-- Output Section -->
+                <div class="step" data-step="5">
+                    <h2 style="margin-bottom: 20px;">Your Configuration</h2>
+
+                    <div class="output-section">
+                        <h3>Summary</h3>
+                        <div id="config-summary"></div>
+                    </div>
+
+                    <div class="output-section">
+                        <h3>Base64 Config (for GitHub Secrets)</h3>
+                        <div class="config-output" id="config-output"></div>
+                        <button class="btn btn-primary copy-btn" id="copy-btn" onclick="copyConfig()">
+                            Copy to Clipboard
+                        </button>
+                    </div>
+
+                    <div class="instructions">
+                        <h4>How to Update Your Goals</h4>
+                        <ol>
+                            <li>Copy the Base64 config above</li>
+                            <li>Go to your GitHub repository Settings</li>
+                            <li>Navigate to Secrets and Variables → Actions</li>
+                            <li>Update the <code>USER_CONFIG_B64</code> secret with the copied value</li>
+                            <li>Your next weekly email will use these new goals!</li>
+                        </ol>
+                    </div>
+
+                    <div class="btn-group" style="margin-top: 30px;">
+                        <button class="btn btn-secondary" onclick="startOver()">← Start Over</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let currentStep = 1;
+        const totalSteps = 4;
+
+        // Race distances in miles
+        const raceDistances = {
+            '5k': 3.1,
+            '10k': 6.2,
+            'half_marathon': 13.1,
+            'marathon': 26.2,
+            'ultra': 50,
+            'custom': null
+        };
+
+        // Set default race date to 12 weeks from now
+        document.addEventListener('DOMContentLoaded', function() {
+            const dateInput = document.getElementById('goal_date');
+            const futureDate = new Date();
+            futureDate.setDate(futureDate.getDate() + 84); // 12 weeks
+            dateInput.value = futureDate.toISOString().split('T')[0];
+            dateInput.min = new Date().toISOString().split('T')[0];
+
+            updatePaceDisplay();
+
+            // Goal category selection
+            document.querySelectorAll('.goal-type-option').forEach(option => {
+                option.addEventListener('click', function() {
+                    document.querySelectorAll('.goal-type-option').forEach(o => o.classList.remove('selected'));
+                    this.classList.add('selected');
+                    this.querySelector('input').checked = true;
+                });
+            });
+
+            // Goal type change handler
+            document.getElementById('goal_type').addEventListener('change', function() {
+                const customGroup = document.getElementById('custom-distance-group');
+                customGroup.classList.toggle('hidden', this.value !== 'custom');
+            });
+
+            // Non-race goal type change handler
+            document.getElementById('non_race_goal_type').addEventListener('change', function() {
+                const targetGroup = document.getElementById('target-mileage-group');
+                targetGroup.classList.toggle('hidden', this.value !== 'build_mileage');
+            });
+        });
+
+        function updateStepIndicators() {
+            document.querySelectorAll('.step-dot').forEach((dot, index) => {
+                dot.classList.remove('active', 'completed');
+                if (index + 1 < currentStep) {
+                    dot.classList.add('completed');
+                } else if (index + 1 === currentStep) {
+                    dot.classList.add('active');
+                }
+            });
+        }
+
+        function showStep(step) {
+            document.querySelectorAll('.step').forEach(s => s.classList.remove('active'));
+
+            if (step === 2) {
+                const category = document.querySelector('input[name="goal_category"]:checked').value;
+                if (category === 'race') {
+                    document.getElementById('step-race').classList.add('active');
+                } else {
+                    document.getElementById('step-non-race').classList.add('active');
+                }
+            } else if (step === 5) {
+                document.querySelector('.step[data-step="5"]').classList.add('active');
+            } else {
+                document.querySelector(`.step[data-step="${step}"]:not(#step-race):not(#step-non-race)`).classList.add('active');
+            }
+
+            updateStepIndicators();
+        }
+
+        function nextStep() {
+            if (currentStep < totalSteps) {
+                currentStep++;
+                showStep(currentStep);
+            }
+        }
+
+        function prevStep() {
+            if (currentStep > 1) {
+                currentStep--;
+                showStep(currentStep);
+            }
+        }
+
+        function updatePaceDisplay() {
+            const goalType = document.getElementById('goal_type').value;
+            const hours = parseInt(document.getElementById('goal_hours').value) || 0;
+            const minutes = parseInt(document.getElementById('goal_minutes').value) || 0;
+
+            let distance = raceDistances[goalType];
+            if (goalType === 'custom') {
+                distance = parseFloat(document.getElementById('custom_distance').value) || 26.2;
+            }
+
+            const totalMinutes = hours * 60 + minutes;
+            const pacePerMile = totalMinutes / distance;
+            const paceMins = Math.floor(pacePerMile);
+            const paceSecs = Math.round((pacePerMile - paceMins) * 60);
+
+            document.getElementById('pace-display').innerHTML =
+                `Target pace: <strong>${paceMins}:${paceSecs.toString().padStart(2, '0')}/mile</strong>`;
+        }
+
+        function generateConfig() {
+            const category = document.querySelector('input[name="goal_category"]:checked').value;
+
+            let config = {
+                email: document.getElementById('email').value,
+                name: document.getElementById('name').value,
+                goal_category: category,
+                current_weekly_mileage: parseInt(document.getElementById('current_weekly_mileage').value),
+                experience_level: document.getElementById('experience_level').value,
+                preferred_long_run_day: document.getElementById('preferred_long_run_day').value,
+                email_day: 'sunday',
+                email_time: '07:00',
+                timezone: document.getElementById('timezone').value
+            };
+
+            if (category === 'race') {
+                const goalType = document.getElementById('goal_type').value;
+                const hours = parseInt(document.getElementById('goal_hours').value) || 0;
+                const minutes = parseInt(document.getElementById('goal_minutes').value) || 0;
+
+                config.goal_type = goalType;
+                config.goal_date = document.getElementById('goal_date').value;
+                config.goal_time_minutes = hours * 60 + minutes;
+
+                // Generate goal target string
+                const distance = goalType === 'custom'
+                    ? parseFloat(document.getElementById('custom_distance').value)
+                    : raceDistances[goalType];
+
+                const raceNames = {
+                    '5k': '5K',
+                    '10k': '10K',
+                    'half_marathon': 'Half Marathon',
+                    'marathon': 'Marathon',
+                    'ultra': 'Ultra',
+                    'custom': 'Race'
+                };
+
+                config.goal_target = `${hours}:${minutes.toString().padStart(2, '0')} ${raceNames[goalType]}`;
+
+                if (goalType === 'custom') {
+                    config.custom_distance_miles = distance;
+                }
+            } else {
+                config.goal_type = document.getElementById('non_race_goal_type').value;
+                config.goal_date = null;
+                config.goal_time_minutes = null;
+                config.goal_target = config.goal_type.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+
+                if (config.goal_type === 'build_mileage') {
+                    config.target_weekly_mileage = parseInt(document.getElementById('target_weekly_mileage').value);
+                }
+            }
+
+            // Generate summary
+            let summaryHtml = '';
+            summaryHtml += `<div class="summary-item"><span class="summary-label">Name</span><span class="summary-value">${config.name}</span></div>`;
+            summaryHtml += `<div class="summary-item"><span class="summary-label">Email</span><span class="summary-value">${config.email}</span></div>`;
+            summaryHtml += `<div class="summary-item"><span class="summary-label">Goal Type</span><span class="summary-value">${config.goal_target}</span></div>`;
+
+            if (category === 'race') {
+                summaryHtml += `<div class="summary-item"><span class="summary-label">Race Date</span><span class="summary-value">${config.goal_date}</span></div>`;
+            }
+
+            summaryHtml += `<div class="summary-item"><span class="summary-label">Current Mileage</span><span class="summary-value">${config.current_weekly_mileage} mi/week</span></div>`;
+            summaryHtml += `<div class="summary-item"><span class="summary-label">Experience</span><span class="summary-value">${config.experience_level}</span></div>`;
+
+            document.getElementById('config-summary').innerHTML = summaryHtml;
+
+            // Generate Base64 config
+            const jsonStr = JSON.stringify(config, null, 2);
+            const base64 = btoa(jsonStr);
+            document.getElementById('config-output').textContent = base64;
+
+            // Show output step
+            currentStep = 5;
+            showStep(5);
+        }
+
+        function copyConfig() {
+            const config = document.getElementById('config-output').textContent;
+            navigator.clipboard.writeText(config).then(() => {
+                const btn = document.getElementById('copy-btn');
+                btn.textContent = 'Copied!';
+                btn.classList.add('copied');
+                setTimeout(() => {
+                    btn.textContent = 'Copy to Clipboard';
+                    btn.classList.remove('copied');
+                }, 2000);
+            });
+        }
+
+        function startOver() {
+            currentStep = 1;
+            showStep(1);
+            document.getElementById('copy-btn').textContent = 'Copy to Clipboard';
+            document.getElementById('copy-btn').classList.remove('copied');
+        }
+    </script>
+</body>
+</html>

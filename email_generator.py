@@ -35,11 +35,38 @@ class EmailGenerator:
         week_start = week_start - timedelta(days=week_start.weekday())
         week_end = week_start + timedelta(days=6)
 
-        weeks_to_race = user_config.get('weeks_until_race', 0)
-        race_name = f"{user_config.get('goal_target', '')} {user_config.get('goal_type', 'Marathon')}".title()
+        weeks_to_race = user_config.get('weeks_until_race')
+        goal_category = user_config.get('goal_category', 'race')
+        goal_target = user_config.get('goal_target', '')
+        goal_type = user_config.get('goal_type', 'marathon')
+        goals_update_url = user_config.get('goals_update_url')
 
-        # Build subject line
-        subject = f"Your Training Plan: Week of {week_start.strftime('%b %d')} | {weeks_to_race} weeks to {race_name}"
+        # Generate race/goal name based on category
+        if goal_category == 'race':
+            race_names = {
+                '5k': '5K',
+                '10k': '10K',
+                'half_marathon': 'Half Marathon',
+                'marathon': 'Marathon',
+                'ultra': 'Ultra',
+                'custom': 'Race'
+            }
+            race_name = f"{goal_target}".title() if goal_target else race_names.get(goal_type, 'Race')
+        else:
+            # Non-race goals
+            goal_names = {
+                'build_mileage': 'Mileage Building',
+                'maintain_fitness': 'Fitness Maintenance',
+                'base_building': 'Base Building',
+                'return_from_injury': 'Return to Running'
+            }
+            race_name = goal_names.get(goal_type, 'Training')
+
+        # Build subject line based on goal type
+        if goal_category == 'race' and weeks_to_race is not None:
+            subject = f"Your Training Plan: Week of {week_start.strftime('%b %d')} | {weeks_to_race} weeks to {race_name}"
+        else:
+            subject = f"Your Training Plan: Week of {week_start.strftime('%b %d')} | {race_name}"
 
         # Extract health metrics
         rhr = analysis_results.get('resting_hr', {})
@@ -103,14 +130,16 @@ class EmailGenerator:
             weeks_to_race=weeks_to_race,
             race_name=race_name,
             race_date=user_config.get('goal_date', ''),
-            target_pace=user_config.get('target_pace', 'N/A'),
+            target_pace=user_config.get('target_pace'),
             training_phase=user_config.get('training_phase', 'build').title(),
+            goal_category=goal_category,
             health_snapshot=health_snapshot,
             recovery_status=recovery_status,
             week_summary=training_plan.get('week_summary', {}),
             daily_plan=training_plan.get('daily_plan', []),
             coaching_notes=training_plan.get('coaching_notes', []),
             recovery_recommendations=training_plan.get('recovery_recommendations', []),
+            goals_update_url=goals_update_url,
             generated_date=datetime.now().strftime('%B %d, %Y at %I:%M %p')
         )
 
@@ -186,7 +215,11 @@ class EmailGenerator:
                                 Your Weekly Training Plan
                             </h1>
                             <p style="color: rgba(255,255,255,0.9); margin: 0; font-size: 16px;">
+                                {% if weeks_to_race %}
                                 Week of {{ week_start }} | {{ weeks_to_race }} weeks to {{ race_name }}
+                                {% else %}
+                                Week of {{ week_start }} | {{ race_name }}
+                                {% endif %}
                             </p>
                         </td>
                     </tr>
@@ -336,14 +369,34 @@ class EmailGenerator:
                     </tr>
                     {% endif %}
 
+                    <!-- Update Goals Button -->
+                    {% if goals_update_url %}
+                    <tr>
+                        <td style="padding: 0 24px 24px 24px; text-align: center;">
+                            <a href="{{ goals_update_url }}" style="display: inline-block; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; text-decoration: none; padding: 12px 24px; border-radius: 8px; font-weight: 600; font-size: 14px;">
+                                Update Your Training Goals
+                            </a>
+                            <p style="color: #999; font-size: 12px; margin-top: 8px;">
+                                Changed your race or fitness goals? Update them anytime.
+                            </p>
+                        </td>
+                    </tr>
+                    {% endif %}
+
                     <!-- Footer -->
                     <tr>
                         <td style="background-color: #f8f9fa; padding: 20px; text-align: center; border-top: 1px solid #eee;">
+                            {% if goal_category == 'race' and target_pace %}
                             <p style="color: #999; font-size: 12px; margin: 0 0 8px 0;">
                                 Target pace: {{ target_pace }}/mile | Race: {{ race_date }}
                             </p>
+                            {% elif goal_category != 'race' %}
+                            <p style="color: #999; font-size: 12px; margin: 0 0 8px 0;">
+                                Goal: {{ race_name }}
+                            </p>
+                            {% endif %}
                             <p style="color: #bbb; font-size: 11px; margin: 0;">
-                                Generated {{ generated_date }} by Garmin Health Analyzer with Claude AI
+                                Generated {{ generated_date }} by Garmin Training Assistant
                             </p>
                         </td>
                     </tr>
