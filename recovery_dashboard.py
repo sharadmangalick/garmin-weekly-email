@@ -26,7 +26,7 @@ LOG_DIR = PROJECT_DIR / "logs"
 LOG_DIR.mkdir(exist_ok=True)
 
 logging.basicConfig(
-    level=logging.INFO,
+    level=logging.DEBUG,
     format='%(asctime)s - %(levelname)s - %(message)s',
     handlers=[
         logging.FileHandler(LOG_DIR / "recovery_dashboard.log"),
@@ -121,6 +121,12 @@ def extract_metrics(summaries: list[dict], sleeps: list[dict]) -> list[dict]:
         bb_highest = get_stat(summary, 'bodyBatteryHighestValue')
         bb_lowest = get_stat(summary, 'bodyBatteryLowestValue')
         stress_avg = get_stat(summary, 'averageStressLevel')
+
+        logger.debug(f"Day {dt}: rhr={rhr}, bb_wake={bb_wake}, bb_high={bb_highest}, stress={stress_avg}")
+        logger.debug(f"  Top-level keys: {list(summary.keys())}")
+        if 'stats' in summary:
+            stats_keys = list(summary['stats'].keys()) if isinstance(summary['stats'], dict) else type(summary['stats'])
+            logger.debug(f"  Stats keys: {stats_keys}")
 
         # Sleep metrics
         sleep = sleep_by_date.get(dt, {})
@@ -471,9 +477,15 @@ def generate_html(metrics: list[dict], readiness: dict) -> str:
 
 
 def send_email(to_address: str, subject: str, html_body: str) -> bool:
-    """Send email using Gmail API with saved credentials."""
+    """Send email using Gmail API with saved credentials.
+
+    Supports two credential formats:
+    1. OAuth tokens: {access_token, refresh_token, client_id, client_secret}
+    2. Service account or installed app: loaded via Credentials.from_authorized_user_file
+    """
     try:
         from google.oauth2.credentials import Credentials
+        from google.auth.transport.requests import Request
         from googleapiclient.discovery import build
 
         creds_path = Path.home() / ".gmail-mcp" / "credentials.json"
@@ -484,13 +496,25 @@ def send_email(to_address: str, subject: str, html_body: str) -> bool:
         with open(creds_path, 'r') as f:
             creds_data = json.load(f)
 
-        credentials = Credentials(
-            token=creds_data.get('access_token'),
-            refresh_token=creds_data.get('refresh_token'),
-            token_uri='https://oauth2.googleapis.com/token',
-            client_id=creds_data.get('client_id'),
-            client_secret=creds_data.get('client_secret')
-        )
+        logger.debug(f"Credential keys: {list(creds_data.keys())}")
+
+        # Try loading as authorized user file first (has all refresh fields)
+        try:
+            credentials = Credentials.from_authorized_user_info(creds_data)
+        except Exception:
+            # Fall back to manual construction
+            credentials = Credentials(
+                token=creds_data.get('access_token') or creds_data.get('token'),
+                refresh_token=creds_data.get('refresh_token'),
+                token_uri=creds_data.get('token_uri', 'https://oauth2.googleapis.com/token'),
+                client_id=creds_data.get('client_id'),
+                client_secret=creds_data.get('client_secret'),
+            )
+
+        # Refresh if needed and possible
+        if credentials.refresh_token and (not credentials.valid or credentials.expired):
+            logger.info("Refreshing credentials...")
+            credentials.refresh(Request())
 
         message = MIMEMultipart('alternative')
         message['to'] = to_address
@@ -507,6 +531,8 @@ def send_email(to_address: str, subject: str, html_body: str) -> bool:
 
     except Exception as e:
         logger.error(f"Failed to send email: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
         return False
 
 
