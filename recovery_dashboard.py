@@ -1,0 +1,567 @@
+#!/usr/bin/env python3
+"""Daily Recovery Dashboard - Post-marathon recovery tracking email.
+
+Fetches Garmin data, calculates recovery metrics, and sends a daily
+email with RHR trend, sleep quality, body battery, and a readiness score.
+"""
+
+import json
+import logging
+import os
+import sys
+import base64
+from datetime import date, datetime, timedelta
+from pathlib import Path
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
+
+PROJECT_DIR = Path(__file__).parent
+sys.path.insert(0, str(PROJECT_DIR))
+
+from config import config
+from garmin_client import GarminClient
+
+# Logging
+LOG_DIR = PROJECT_DIR / "logs"
+LOG_DIR.mkdir(exist_ok=True)
+
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.FileHandler(LOG_DIR / "recovery_dashboard.log"),
+        logging.StreamHandler()
+    ]
+)
+logger = logging.getLogger(__name__)
+
+# Recovery constants
+RHR_BASELINE = 43.2
+MARATHON_DATE = date(2026, 3, 1)
+RECOVERY_DAYS = 7
+EMAIL_TO = "smangalick@gmail.com"
+
+
+def fetch_data() -> bool:
+    """Fetch recent Garmin data."""
+    try:
+        client = GarminClient()
+        if not client.login():
+            logger.error("Failed to login to Garmin Connect")
+            return False
+        client.fetch_daily_summaries(days=RECOVERY_DAYS, force=True)
+        client.fetch_sleep(days=RECOVERY_DAYS, force=True)
+        client.fetch_heart_rate(days=RECOVERY_DAYS, force=True)
+        logger.info("Data fetch complete")
+        return True
+    except Exception as e:
+        logger.error(f"Fetch failed: {e}")
+        return False
+
+
+def load_daily_summaries() -> list[dict]:
+    """Load daily summary JSON files sorted by date."""
+    summaries = []
+    summary_dir = config.data_dir / "daily_summaries"
+    if not summary_dir.exists():
+        return summaries
+    for f in sorted(summary_dir.glob("*.json")):
+        try:
+            with open(f) as fh:
+                data = json.load(fh)
+                data['_date'] = f.stem
+                summaries.append(data)
+        except (json.JSONDecodeError, IOError):
+            continue
+    return summaries
+
+
+def load_sleep_data() -> list[dict]:
+    """Load sleep JSON files sorted by date."""
+    sleeps = []
+    sleep_dir = config.data_dir / "sleep"
+    if not sleep_dir.exists():
+        return sleeps
+    for f in sorted(sleep_dir.glob("*.json")):
+        try:
+            with open(f) as fh:
+                data = json.load(fh)
+                data['_date'] = f.stem
+                sleeps.append(data)
+        except (json.JSONDecodeError, IOError):
+            continue
+    return sleeps
+
+
+def get_stat(day: dict, key: str, default=None):
+    """Get a stat from daily summary, handling nested 'stats' structure."""
+    if key in day:
+        return day[key]
+    if 'stats' in day and isinstance(day['stats'], dict):
+        return day['stats'].get(key, default)
+    return default
+
+
+def extract_metrics(summaries: list[dict], sleeps: list[dict]) -> list[dict]:
+    """Extract daily recovery metrics from raw data."""
+    sleep_by_date = {}
+    for s in sleeps:
+        d = s.get('_date', '')
+        if d:
+            sleep_by_date[d] = s
+
+    days = []
+    for summary in summaries:
+        dt = summary.get('_date', '')
+        if not dt:
+            continue
+
+        rhr = get_stat(summary, 'restingHeartRate')
+        bb_wake = get_stat(summary, 'bodyBatteryAtWakeTime')
+        bb_highest = get_stat(summary, 'bodyBatteryHighestValue')
+        bb_lowest = get_stat(summary, 'bodyBatteryLowestValue')
+        stress_avg = get_stat(summary, 'averageStressLevel')
+
+        # Sleep metrics
+        sleep = sleep_by_date.get(dt, {})
+        sleep_dto = sleep.get('dailySleepDTO', {})
+        sleep_score = None
+        sleep_scores = sleep_dto.get('sleepScores', {})
+        if sleep_scores and 'overall' in sleep_scores:
+            sleep_score = sleep_scores['overall'].get('value')
+
+        sleep_seconds = sleep_dto.get('sleepTimeSeconds', 0)
+        sleep_hours = round(sleep_seconds / 3600, 1) if sleep_seconds else None
+        deep_seconds = sleep_dto.get('deepSleepSeconds', 0)
+        deep_min = round(deep_seconds / 60) if deep_seconds else None
+        rem_seconds = sleep_dto.get('remSleepSeconds', 0)
+        rem_min = round(rem_seconds / 60) if rem_seconds else None
+        light_seconds = sleep_dto.get('lightSleepSeconds', 0)
+        light_min = round(light_seconds / 60) if light_seconds else None
+        sleep_hr = sleep_dto.get('avgHeartRate')
+
+        days.append({
+            'date': dt,
+            'rhr': rhr,
+            'rhr_delta': round(rhr - RHR_BASELINE, 1) if rhr else None,
+            'bb_wake': bb_wake,
+            'bb_highest': bb_highest,
+            'bb_lowest': bb_lowest,
+            'stress_avg': stress_avg,
+            'sleep_score': sleep_score,
+            'sleep_hours': sleep_hours,
+            'deep_min': deep_min,
+            'rem_min': rem_min,
+            'light_min': light_min,
+            'sleep_hr': sleep_hr,
+        })
+
+    return days
+
+
+def calculate_readiness(today: dict) -> dict:
+    """Calculate red/yellow/green readiness from today's metrics."""
+    rhr = today.get('rhr')
+    rhr_delta = today.get('rhr_delta')
+    bb_wake = today.get('bb_wake')
+    sleep_score = today.get('sleep_score')
+    sleep_hr = today.get('sleep_hr')
+    rem_min = today.get('rem_min')
+
+    scores = []  # list of (score, reason) where 0=red, 1=yellow, 2=green
+
+    # RHR
+    if rhr_delta is not None:
+        if rhr_delta <= 3:
+            scores.append((2, f"RHR {rhr} bpm (+{rhr_delta} from baseline) — near normal"))
+        elif rhr_delta <= 5:
+            scores.append((1, f"RHR {rhr} bpm (+{rhr_delta} from baseline) — still elevated"))
+        else:
+            scores.append((0, f"RHR {rhr} bpm (+{rhr_delta} from baseline) — significantly elevated"))
+
+    # Body Battery
+    if bb_wake is not None:
+        if bb_wake >= 80:
+            scores.append((2, f"Body Battery at wake: {bb_wake} — strong recharge"))
+        elif bb_wake >= 60:
+            scores.append((1, f"Body Battery at wake: {bb_wake} — partial recharge"))
+        else:
+            scores.append((0, f"Body Battery at wake: {bb_wake} — poor recharge"))
+
+    # Sleep Score
+    if sleep_score is not None:
+        if sleep_score >= 75:
+            scores.append((2, f"Sleep score: {sleep_score} — good quality"))
+        elif sleep_score >= 60:
+            scores.append((1, f"Sleep score: {sleep_score} — fair quality"))
+        else:
+            scores.append((0, f"Sleep score: {sleep_score} — poor quality"))
+
+    # Sleep HR
+    if sleep_hr is not None:
+        if sleep_hr <= 52:
+            scores.append((2, f"Sleep HR: {sleep_hr} bpm — recovered"))
+        elif sleep_hr <= 56:
+            scores.append((1, f"Sleep HR: {sleep_hr} bpm — still elevated"))
+        else:
+            scores.append((0, f"Sleep HR: {sleep_hr} bpm — high, body still stressed"))
+
+    # REM sleep
+    if rem_min is not None:
+        if rem_min >= 60:
+            scores.append((2, f"REM sleep: {rem_min} min — good"))
+        elif rem_min >= 40:
+            scores.append((1, f"REM sleep: {rem_min} min — below optimal"))
+        else:
+            scores.append((0, f"REM sleep: {rem_min} min — significantly low"))
+
+    if not scores:
+        return {
+            'level': 'yellow',
+            'color': '#ffc107',
+            'label': 'Insufficient Data',
+            'message': 'Not enough metrics available to assess readiness.',
+            'details': [],
+            'guidance': 'Take it easy until we have more data.',
+        }
+
+    avg_score = sum(s for s, _ in scores) / len(scores)
+    red_count = sum(1 for s, _ in scores if s == 0)
+    details = [reason for _, reason in scores]
+
+    if red_count >= 2 or avg_score < 0.8:
+        return {
+            'level': 'red',
+            'color': '#dc3545',
+            'label': 'Rest Day',
+            'message': 'Multiple recovery indicators are poor. Your body needs more time.',
+            'details': details,
+            'guidance': 'Complete rest. Walk only. Prioritize sleep, hydration, and protein.',
+        }
+    elif avg_score < 1.5:
+        return {
+            'level': 'yellow',
+            'color': '#ffc107',
+            'label': 'Light Movement Only',
+            'message': 'Recovery is progressing but not there yet.',
+            'details': details,
+            'guidance': 'Easy walk (20-30 min) or gentle bike (Zone 1, HR under 110). No running.',
+        }
+    else:
+        return {
+            'level': 'green',
+            'color': '#28a745',
+            'label': 'Easy Activity OK',
+            'message': 'Recovery metrics are trending back to normal.',
+            'details': details,
+            'guidance': 'Easy run/bike (30-45 min, Zone 2). Keep it conversational. No intensity.',
+        }
+
+
+def trend_arrow(values: list) -> str:
+    """Return trend arrow based on recent values."""
+    clean = [v for v in values if v is not None]
+    if len(clean) < 2:
+        return "—"
+    if clean[-1] < clean[-2]:
+        return "&#8600;"  # ↘ improving (lower is better for RHR/stress)
+    elif clean[-1] > clean[-2]:
+        return "&#8599;"  # ↗ worsening
+    return "&#8594;"  # → stable
+
+
+def trend_arrow_higher_better(values: list) -> str:
+    """Return trend arrow where higher is better (body battery, sleep score)."""
+    clean = [v for v in values if v is not None]
+    if len(clean) < 2:
+        return "—"
+    if clean[-1] > clean[-2]:
+        return "&#8599;"  # ↗ improving
+    elif clean[-1] < clean[-2]:
+        return "&#8600;"  # ↘ worsening
+    return "&#8594;"  # → stable
+
+
+def generate_html(metrics: list[dict], readiness: dict) -> str:
+    """Generate the recovery dashboard HTML email."""
+    today = date.today()
+    recovery_day = (today - MARATHON_DATE).days
+    today_metrics = metrics[-1] if metrics else {}
+
+    # Build trend rows for the table
+    trend_rows = ""
+    for m in metrics:
+        dt = m['date']
+        day_num = (date.fromisoformat(dt) - MARATHON_DATE).days
+        rhr_str = f"{m['rhr']} <span style='color:#999;font-size:11px;'>(+{m['rhr_delta']})</span>" if m['rhr'] else "—"
+        bb_str = str(m['bb_wake']) if m['bb_wake'] else "—"
+        sleep_str = str(m['sleep_score']) if m['sleep_score'] else "—"
+        rem_str = f"{m['rem_min']}m" if m['rem_min'] else "—"
+        deep_str = f"{m['deep_min']}m" if m['deep_min'] else "—"
+        sleep_hr_str = str(m['sleep_hr']) if m['sleep_hr'] else "—"
+
+        is_today = dt == today.isoformat()
+        row_style = "background-color: #f0f4ff;" if is_today else ""
+
+        trend_rows += f"""
+        <tr style="{row_style}">
+            <td style="padding:8px 10px;border-bottom:1px solid #eee;font-weight:{'bold' if is_today else 'normal'};">
+                Day {day_num}<br><span style="color:#999;font-size:11px;">{dt}</span>
+            </td>
+            <td style="padding:8px 10px;border-bottom:1px solid #eee;text-align:center;">{rhr_str}</td>
+            <td style="padding:8px 10px;border-bottom:1px solid #eee;text-align:center;">{sleep_hr_str}</td>
+            <td style="padding:8px 10px;border-bottom:1px solid #eee;text-align:center;">{bb_str}</td>
+            <td style="padding:8px 10px;border-bottom:1px solid #eee;text-align:center;">{sleep_str}</td>
+            <td style="padding:8px 10px;border-bottom:1px solid #eee;text-align:center;">{rem_str}</td>
+            <td style="padding:8px 10px;border-bottom:1px solid #eee;text-align:center;">{deep_str}</td>
+        </tr>"""
+
+    # Readiness details
+    details_html = ""
+    for detail in readiness['details']:
+        # Color code based on content
+        if "near normal" in detail or "strong" in detail or "good" in detail or "recovered" in detail:
+            dot = "&#9989;"
+        elif "still" in detail or "partial" in detail or "fair" in detail or "below" in detail:
+            dot = "&#128310;"
+        else:
+            dot = "&#9888;"
+        details_html += f"<tr><td style='padding:6px 0;'>{dot} {detail}</td></tr>"
+
+    # RHR trend values for arrow
+    rhr_values = [m['rhr'] for m in metrics]
+    bb_values = [m['bb_wake'] for m in metrics]
+    sleep_values = [m['sleep_score'] for m in metrics]
+
+    rhr_trend = trend_arrow(rhr_values)
+    bb_trend = trend_arrow_higher_better(bb_values)
+    sleep_trend = trend_arrow_higher_better(sleep_values)
+
+    html = f"""<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+</head>
+<body style="margin:0;padding:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Helvetica Neue',Arial,sans-serif;background-color:#f5f5f5;">
+<table width="100%" cellpadding="0" cellspacing="0" style="background-color:#f5f5f5;padding:20px 0;">
+<tr><td align="center">
+<table width="640" cellpadding="0" cellspacing="0" style="background-color:#fff;border-radius:12px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,0.1);">
+
+    <!-- Header -->
+    <tr>
+        <td style="background:linear-gradient(135deg,#1a1a2e 0%,#16213e 100%);padding:24px;text-align:center;">
+            <h1 style="color:#fff;margin:0 0 4px 0;font-size:22px;">Marathon Recovery Dashboard</h1>
+            <p style="color:rgba(255,255,255,0.7);margin:0;font-size:14px;">
+                Day {recovery_day} of {RECOVERY_DAYS} | {today.strftime('%B %d, %Y')}
+            </p>
+        </td>
+    </tr>
+
+    <!-- Readiness Banner -->
+    <tr>
+        <td style="padding:0;">
+            <table width="100%" cellpadding="0" cellspacing="0" style="background-color:{readiness['color']}18;">
+                <tr>
+                    <td style="padding:20px 24px;border-left:5px solid {readiness['color']};">
+                        <div style="font-size:20px;font-weight:bold;color:{readiness['color']};margin-bottom:4px;">
+                            {readiness['label']}
+                        </div>
+                        <div style="color:#444;font-size:14px;">{readiness['message']}</div>
+                    </td>
+                </tr>
+            </table>
+        </td>
+    </tr>
+
+    <!-- Metric Details -->
+    <tr>
+        <td style="padding:20px 24px 8px 24px;">
+            <h2 style="color:#333;font-size:16px;margin:0 0 12px 0;border-bottom:2px solid #eee;padding-bottom:8px;">
+                Today's Metrics
+            </h2>
+            <table width="100%" cellpadding="0" cellspacing="0">
+                {details_html}
+            </table>
+        </td>
+    </tr>
+
+    <!-- Guidance -->
+    <tr>
+        <td style="padding:8px 24px 20px 24px;">
+            <table width="100%" cellpadding="0" cellspacing="0" style="background-color:#f8f9fa;border-radius:8px;">
+                <tr>
+                    <td style="padding:14px 16px;">
+                        <strong style="color:#333;">Today's guidance:</strong>
+                        <span style="color:#555;"> {readiness['guidance']}</span>
+                    </td>
+                </tr>
+            </table>
+        </td>
+    </tr>
+
+    <!-- Trend Summary Cards -->
+    <tr>
+        <td style="padding:0 24px 16px 24px;">
+            <table width="100%" cellpadding="0" cellspacing="0">
+                <tr>
+                    <td width="33%" style="padding:4px;">
+                        <table width="100%" cellpadding="0" cellspacing="0" style="background:#f8f9fa;border-radius:8px;text-align:center;">
+                            <tr><td style="padding:12px 8px 4px 8px;font-size:11px;color:#999;">RHR TREND</td></tr>
+                            <tr><td style="padding:0 8px 12px 8px;font-size:18px;font-weight:bold;">{rhr_trend}</td></tr>
+                        </table>
+                    </td>
+                    <td width="33%" style="padding:4px;">
+                        <table width="100%" cellpadding="0" cellspacing="0" style="background:#f8f9fa;border-radius:8px;text-align:center;">
+                            <tr><td style="padding:12px 8px 4px 8px;font-size:11px;color:#999;">BODY BATTERY</td></tr>
+                            <tr><td style="padding:0 8px 12px 8px;font-size:18px;font-weight:bold;">{bb_trend}</td></tr>
+                        </table>
+                    </td>
+                    <td width="33%" style="padding:4px;">
+                        <table width="100%" cellpadding="0" cellspacing="0" style="background:#f8f9fa;border-radius:8px;text-align:center;">
+                            <tr><td style="padding:12px 8px 4px 8px;font-size:11px;color:#999;">SLEEP SCORE</td></tr>
+                            <tr><td style="padding:0 8px 12px 8px;font-size:18px;font-weight:bold;">{sleep_trend}</td></tr>
+                        </table>
+                    </td>
+                </tr>
+            </table>
+        </td>
+    </tr>
+
+    <!-- Daily Trend Table -->
+    <tr>
+        <td style="padding:0 24px 24px 24px;">
+            <h2 style="color:#333;font-size:16px;margin:0 0 12px 0;border-bottom:2px solid #eee;padding-bottom:8px;">
+                Recovery Trend (since marathon)
+            </h2>
+            <table width="100%" cellpadding="0" cellspacing="0" style="font-size:13px;">
+                <tr style="background-color:#f8f9fa;">
+                    <th style="padding:8px 10px;text-align:left;border-bottom:2px solid #ddd;">Day</th>
+                    <th style="padding:8px 10px;text-align:center;border-bottom:2px solid #ddd;">RHR</th>
+                    <th style="padding:8px 10px;text-align:center;border-bottom:2px solid #ddd;">Sleep HR</th>
+                    <th style="padding:8px 10px;text-align:center;border-bottom:2px solid #ddd;">BB Wake</th>
+                    <th style="padding:8px 10px;text-align:center;border-bottom:2px solid #ddd;">Sleep</th>
+                    <th style="padding:8px 10px;text-align:center;border-bottom:2px solid #ddd;">REM</th>
+                    <th style="padding:8px 10px;text-align:center;border-bottom:2px solid #ddd;">Deep</th>
+                </tr>
+                {trend_rows}
+            </table>
+            <p style="color:#999;font-size:11px;margin:8px 0 0 0;">
+                RHR baseline: {RHR_BASELINE} bpm | Target: RHR within 3 bpm of baseline, BB wake &gt; 80, sleep score &gt; 75
+            </p>
+        </td>
+    </tr>
+
+    <!-- Footer -->
+    <tr>
+        <td style="background-color:#f8f9fa;padding:16px;text-align:center;border-top:1px solid #eee;">
+            <p style="color:#bbb;font-size:11px;margin:0;">
+                Generated {datetime.now().strftime('%B %d, %Y at %I:%M %p')} | Garmin Recovery Dashboard
+            </p>
+        </td>
+    </tr>
+
+</table>
+</td></tr>
+</table>
+</body>
+</html>"""
+
+    return html
+
+
+def send_email(to_address: str, subject: str, html_body: str) -> bool:
+    """Send email using Gmail API with saved credentials."""
+    try:
+        from google.oauth2.credentials import Credentials
+        from googleapiclient.discovery import build
+
+        creds_path = Path.home() / ".gmail-mcp" / "credentials.json"
+        if not creds_path.exists():
+            logger.error("Gmail credentials not found at ~/.gmail-mcp/credentials.json")
+            return False
+
+        with open(creds_path, 'r') as f:
+            creds_data = json.load(f)
+
+        credentials = Credentials(
+            token=creds_data.get('access_token'),
+            refresh_token=creds_data.get('refresh_token'),
+            token_uri='https://oauth2.googleapis.com/token',
+            client_id=creds_data.get('client_id'),
+            client_secret=creds_data.get('client_secret')
+        )
+
+        message = MIMEMultipart('alternative')
+        message['to'] = to_address
+        message['subject'] = subject
+        html_part = MIMEText(html_body, 'html')
+        message.attach(html_part)
+
+        raw = base64.urlsafe_b64encode(message.as_bytes()).decode()
+        service = build('gmail', 'v1', credentials=credentials)
+        result = service.users().messages().send(userId='me', body={'raw': raw}).execute()
+
+        logger.info(f"Email sent! Message ID: {result['id']}")
+        return True
+
+    except Exception as e:
+        logger.error(f"Failed to send email: {e}")
+        return False
+
+
+def main():
+    logger.info("=" * 50)
+    logger.info("Recovery Dashboard")
+    logger.info(f"Date: {date.today().isoformat()}")
+    logger.info(f"Recovery day: {(date.today() - MARATHON_DATE).days}")
+    logger.info("=" * 50)
+
+    # Fetch fresh data
+    fetch_data()
+
+    # Load and analyze
+    summaries = load_daily_summaries()
+    sleeps = load_sleep_data()
+
+    if not summaries:
+        logger.error("No daily summary data available")
+        sys.exit(1)
+
+    metrics = extract_metrics(summaries, sleeps)
+    if not metrics:
+        logger.error("Could not extract metrics")
+        sys.exit(1)
+
+    # Filter to post-marathon only
+    metrics = [m for m in metrics if m['date'] >= MARATHON_DATE.isoformat()]
+
+    logger.info(f"Metrics for {len(metrics)} days post-marathon")
+    today_metrics = metrics[-1] if metrics else {}
+
+    # Calculate readiness
+    readiness = calculate_readiness(today_metrics)
+    logger.info(f"Readiness: {readiness['level']} - {readiness['label']}")
+
+    # Generate email
+    recovery_day = (date.today() - MARATHON_DATE).days
+    subject = f"Recovery Day {recovery_day}: {readiness['label']} {'🟢' if readiness['level'] == 'green' else '🟡' if readiness['level'] == 'yellow' else '🔴'}"
+
+    html = generate_html(metrics, readiness)
+
+    # Send
+    success = send_email(EMAIL_TO, subject, html)
+    if success:
+        logger.info("Recovery dashboard email sent!")
+    else:
+        logger.error("Failed to send email")
+        # Save HTML locally as fallback
+        output_path = PROJECT_DIR / "recovery_dashboard.html"
+        with open(output_path, 'w') as f:
+            f.write(html)
+        logger.info(f"HTML saved to {output_path}")
+        sys.exit(1)
+
+
+if __name__ == "__main__":
+    main()

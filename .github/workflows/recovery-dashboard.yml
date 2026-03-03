@@ -1,0 +1,50 @@
+name: Daily Recovery Dashboard
+
+on:
+  # Run daily at 7:00 AM Pacific (14:00 UTC)
+  schedule:
+    - cron: '0 14 * * *'
+
+  # Allow manual trigger
+  workflow_dispatch:
+
+jobs:
+  send-recovery-email:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+          pip install google-api-python-client google-auth
+
+      - name: Create Gmail credentials
+        env:
+          GMAIL_CREDS_B64: ${{ secrets.GMAIL_CREDENTIALS_B64 }}
+        run: |
+          mkdir -p ~/.gmail-mcp
+          python3 -c "import os,base64; open(os.path.expanduser('~/.gmail-mcp/credentials.json'),'w').write(base64.b64decode(os.environ['GMAIL_CREDS_B64'].strip()).decode())"
+
+      - name: Create data directories
+        run: mkdir -p data/{daily_summaries,sleep,heart_rate,vo2max,activities}
+
+      - name: Run recovery dashboard
+        env:
+          GARMIN_EMAIL: ${{ secrets.GARMIN_EMAIL }}
+          GARMIN_PASSWORD: ${{ secrets.GARMIN_PASSWORD }}
+        run: python recovery_dashboard.py
+
+      - name: Upload logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: recovery-logs
+          path: logs/
