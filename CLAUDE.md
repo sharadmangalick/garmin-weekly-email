@@ -2,66 +2,86 @@
 
 ## Repo Overview
 Automated Garmin health emails via GitHub Actions. Two main workflows:
+- **Ramp-Up Coach** (`recovery_dashboard.py`) — daily post-event ramp-up email with phase system
 - **Weekly training email** (`automated_weekly_email.py`) — weekly training plan
-- **Recovery dashboard** (`recovery_dashboard.py`) — daily post-event recovery email
 
 ## Key Files
 | File | Purpose |
 |------|---------|
-| `recovery_dashboard.py` | Daily recovery email — config, scoring, HTML generation |
+| `recovery_dashboard.py` | Daily ramp-up coach — phases, gates, workouts, readiness, HTML |
 | `automated_weekly_email.py` | Weekly training plan email |
 | `email_sender.py` | **Shared** email sending (Gmail API + SMTP fallback) |
 | `config.py` | Shared config + `setup_logging(name)` helper |
 | `user_config.py` | User preferences (name, email, goals) — single source of truth for recipient |
 | `garmin_client.py` | OOP Garmin Connect client (login, fetch data) |
 | `data_analyzer.py` | Health metric analysis |
-| `.github/workflows/recovery-dashboard.yml` | Cron schedule for recovery email (9 PM PDT) |
+| `.github/workflows/recovery-dashboard.yml` | Cron schedule for ramp-up coach (9 PM PDT) |
 | `.github/workflows/weekly-email.yml` | Cron schedule for weekly email |
+
+## Ramp-Up Coach — Phase System
+
+### Phases
+| Phase | Days | Description |
+|-------|------|-------------|
+| 1: Recovery | 1-7 | Walks and easy bike only. No strength. |
+| 2: Half-Volume | 8-14 | 2 sets per exercise, skip split squats/calf raises + light aerobic |
+| 3: Three-Quarter | 15-21 | All exercises back, 3 sets most + normal aerobic |
+| 4: Steady State | 22+ | Full plan. Can disable email and use runplan.fun |
+
+### Gate Checks (evaluated daily from day 8)
+Gates control phase advancement. If any gate fails, the athlete is held at the previous phase.
+- **RHR trending down**: last 3-day avg < previous 3-day avg
+- **Sleep HR < 53**
+- **Body battery wake > 80**
+- **Sleep score > 70**
+
+### Weekly Schedule (phases 2-4)
+| Day | Workout |
+|-----|---------|
+| Mon | Strength + 30-40 min easy bike |
+| Tue | Easy run (30-45 min, Zone 2) — defer to runplan.fun |
+| Wed | Rest |
+| Thu | Strength + optional easy bike |
+| Fri | Rest or easy walk |
+| Sat | Longer easy run or ride (45-60 min) — defer to runplan.fun |
+| Sun | Rest or easy movement |
+
+Phase 1 overrides everything to "walk or easy bike only."
+
+### Configuration (top of `recovery_dashboard.py`)
+- `RAMPUP_CONFIG` — event name/date, RHR baseline, phase definitions
+- `GATE_THRESHOLDS` — 4 gate conditions
+- `STRENGTH_EXERCISES` — exercises with sets per phase
+- `WEEKLY_SCHEDULE` — day-of-week → workout type
+- `READINESS_CONFIG` — red/yellow/green readiness labels
+- `THRESHOLDS` — readiness scoring thresholds
+- `SEND_TIMING` — "evening" or "morning"
+
+### How to Reuse for a New Event
+1. Update `RAMPUP_CONFIG` with new event name, date, and RHR baseline
+2. Adjust phase day ranges if needed
+3. Modify `STRENGTH_EXERCISES` if the workout plan changes
+4. Re-enable workflow if disabled
+
+### Running Plans
+Running is handled by [runplan.fun](https://runplan.fun), not this email. The email defers to runplan.fun on run days (Tue/Sat).
 
 ## Shared Modules
 
 ### `email_sender.py`
-Both scripts import `send_email(to, subject, html)` from here. It tries Gmail API first (OAuth from `~/.gmail-mcp/credentials.json`), then falls back to SMTP (`GMAIL_APP_PASSWORD` env var). Change email logic in this one file.
+Both scripts import `send_email(to, subject, html)`. Tries Gmail API first, falls back to SMTP (`GMAIL_APP_PASSWORD`).
 
 ### `config.py` — `setup_logging(name)`
-Call `logger = setup_logging("my_script")` instead of copy-pasting logging boilerplate. Logs to `logs/{name}.log` + stderr.
+Call `logger = setup_logging("my_script")` for logging to `logs/{name}.log` + stderr.
 
 ### `user_config.py` — recipient email
-Both scripts get the recipient email from `UserConfig().email`. No hardcoded email addresses in individual scripts.
-
-## Recovery Dashboard — How to Make Common Changes
-
-### Change event (e.g., new race)
-Edit `EVENT_CONFIG` at top of `recovery_dashboard.py`:
-```python
-EVENT_CONFIG = {
-    'name': 'Half Marathon',
-    'date': date(2026, 6, 15),
-    'recovery_days': 5,
-    'rhr_baseline': 42.0,
-}
-```
-
-### Switch between morning/evening send
-1. Update cron in `.github/workflows/recovery-dashboard.yml`
-2. Set `SEND_TIMING` in `recovery_dashboard.py`:
-   - `"evening"` → guidance says "Tomorrow:", subject says "Evening Recovery"
-   - `"morning"` → guidance says "Today:", subject says "Recovery"
-
-### Change guidance text
-Edit `READINESS_CONFIG` dict at top of `recovery_dashboard.py`. Use `{prefix}` placeholder for "Tomorrow:"/"Today:" (auto-set by `SEND_TIMING`).
-
-### Tune readiness thresholds
-Edit `THRESHOLDS` dict at top of `recovery_dashboard.py`. Keys: `rhr_green`, `rhr_yellow`, `bb_green`, `bb_yellow`, `sleep_score_green`, `sleep_score_yellow`, `sleep_hr_green`, `sleep_hr_yellow`, `rem_green`, `rem_yellow`.
-
-## Garmin Data Format
-`garmin_client.py` saves nested format: `{"date": ..., "stats": {...}, "stress": {...}}`. Use `get_stat(day, key)` to access fields — it checks both top-level and nested `stats`.
+Both scripts get recipient from `UserConfig().email`. No hardcoded emails.
 
 ## GitHub Actions Secrets
 - `GARMIN_EMAIL` / `GARMIN_PASSWORD` — Garmin Connect login
 - `GMAIL_APP_PASSWORD` — Gmail SMTP app password (primary send method)
 - `GMAIL_CREDENTIALS_B64` — OAuth creds (missing client_id/secret, can't auto-refresh)
-- `USER_CONFIG_B64` — user config for weekly email
+- `USER_CONFIG_B64` — user config JSON (email, name, goals, timezone)
 
 ## Workflow Commands
 ```bash
@@ -79,4 +99,4 @@ gh workflow enable recovery-dashboard.yml --repo sharadmangalick/garmin-weekly-e
 ## Important Gotchas
 - **Today's data may be incomplete** if fetched before the day ends in Pacific time. Code uses most recent day WITH actual data.
 - **Gmail OAuth can't refresh** — falls back to SMTP via `GMAIL_APP_PASSWORD`.
-- **VO2 max data contamination** — `data/vo2max/` had sample data mixed with real data in the past. Always verify against Garmin Connect app.
+- **Fetches 14 days** of data (need 6+ for RHR trending gate check).

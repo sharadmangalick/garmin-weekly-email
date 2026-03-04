@@ -1,4 +1,4 @@
-name: Daily Recovery Dashboard
+name: Daily Ramp-Up Coach
 
 on:
   # Run daily at 9:00 PM Pacific (04:00 UTC next day)
@@ -9,7 +9,7 @@ on:
   workflow_dispatch:
 
 jobs:
-  send-recovery-email:
+  send-rampup-email:
     runs-on: ubuntu-latest
 
     steps:
@@ -33,10 +33,16 @@ jobs:
           mkdir -p ~/.gmail-mcp
           python3 -c "import os,base64; open(os.path.expanduser('~/.gmail-mcp/credentials.json'),'w').write(base64.b64decode(os.environ['GMAIL_CREDS_B64'].strip()).decode())"
 
+      - name: Create user config
+        env:
+          USER_CONFIG_B64: ${{ secrets.USER_CONFIG_B64 }}
+        run: |
+          python3 -c "import os,base64; open('user_config.json','w').write(base64.b64decode(os.environ['USER_CONFIG_B64'].strip()).decode())"
+
       - name: Create data directories
         run: mkdir -p data/{daily_summaries,sleep,heart_rate,vo2max,activities}
 
-      - name: Run recovery dashboard
+      - name: Run ramp-up coach
         env:
           GARMIN_EMAIL: ${{ secrets.GARMIN_EMAIL }}
           GARMIN_PASSWORD: ${{ secrets.GARMIN_PASSWORD }}
@@ -47,5 +53,5 @@ jobs:
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: recovery-logs
+          name: rampup-logs
           path: logs/
