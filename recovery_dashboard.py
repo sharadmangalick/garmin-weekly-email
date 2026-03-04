@@ -242,7 +242,7 @@ def calculate_readiness(today: dict) -> dict:
             'label': 'Rest Day',
             'message': 'Multiple recovery indicators are poor. Your body needs more time.',
             'details': details,
-            'guidance': 'Complete rest. Walk only. Prioritize sleep, hydration, and protein.',
+            'guidance': 'Complete rest tomorrow. Walk only. Prioritize sleep, hydration, and protein.',
         }
     elif avg_score < 1.5:
         return {
@@ -251,7 +251,7 @@ def calculate_readiness(today: dict) -> dict:
             'label': 'Light Movement Only',
             'message': 'Recovery is progressing but not there yet.',
             'details': details,
-            'guidance': 'Easy walk (20-30 min) or gentle bike (Zone 1, HR under 110). No running.',
+            'guidance': 'Tomorrow: Easy walk (20-30 min) or gentle bike (Zone 1, HR under 110). No running.',
         }
     else:
         return {
@@ -260,7 +260,7 @@ def calculate_readiness(today: dict) -> dict:
             'label': 'Easy Activity OK',
             'message': 'Recovery metrics are trending back to normal.',
             'details': details,
-            'guidance': 'Easy run/bike (30-45 min, Zone 2). Keep it conversational. No intensity.',
+            'guidance': 'Tomorrow: Easy run/bike (30-45 min, Zone 2). Keep it conversational. No intensity.',
         }
 
 
@@ -398,7 +398,7 @@ def generate_html(metrics: list[dict], readiness: dict) -> str:
             <table width="100%" cellpadding="0" cellspacing="0" style="background-color:#f8f9fa;border-radius:8px;">
                 <tr>
                     <td style="padding:14px 16px;">
-                        <strong style="color:#333;">Today's guidance:</strong>
+                        <strong style="color:#333;">Tomorrow's guidance:</strong>
                         <span style="color:#555;"> {readiness['guidance']}</span>
                     </td>
                 </tr>
@@ -621,7 +621,7 @@ def main():
 
     # Generate email
     recovery_day = (date.today() - MARATHON_DATE).days
-    subject = f"Recovery Day {recovery_day}: {readiness['label']} {'🟢' if readiness['level'] == 'green' else '🟡' if readiness['level'] == 'yellow' else '🔴'}"
+    subject = f"Evening Recovery Day {recovery_day}: {readiness['label']} {'🟢' if readiness['level'] == 'green' else '🟡' if readiness['level'] == 'yellow' else '🔴'}"
 
     html = generate_html(metrics, readiness)
 
