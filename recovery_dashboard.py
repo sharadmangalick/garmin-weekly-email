@@ -117,8 +117,7 @@ USER_TZ = ZoneInfo("America/Los_Angeles")
 
 def _today() -> date:
     """Return today's date in the user's timezone."""
-    # TEMP PREVIEW: fake date for phase 3, Thursday strength day tomorrow
-    return date(2026, 3, 18)  # Wednesday day 17 → tomorrow Thursday
+    return datetime.now(USER_TZ).date()
 
 
 # ═══════════════════════════════════════════════════════════════════
@@ -895,12 +894,6 @@ def main():
 
     # Gate checks
     gate_result = check_gates(metrics)
-    # TEMP PREVIEW: force gates to pass for phase 3 preview
-    gate_result['passed'] = True
-    gate_result['hold_reason'] = ""
-    for r in gate_result['results']:
-        if r['passed'] is False:
-            r['passed'] = True
     logger.info(f"Gates passed: {gate_result['passed']}")
     if gate_result['hold_reason']:
         logger.info(f"Hold: {gate_result['hold_reason']}")
