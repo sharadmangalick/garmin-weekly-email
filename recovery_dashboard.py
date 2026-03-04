@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Daily Recovery Dashboard - Post-marathon recovery tracking email.
+"""Daily Recovery Dashboard - Post-event recovery tracking email.
 
 Fetches Garmin data, calculates recovery metrics, and sends a daily
 email with RHR trend, sleep quality, body battery, and a readiness score.
@@ -35,12 +35,79 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Recovery constants
-RHR_BASELINE = 43.2
-MARATHON_DATE = date(2026, 3, 1)
-RECOVERY_DAYS = 7
-EMAIL_TO = "smangalick@gmail.com"
+# ── Event & user config ─────────────────────────────────────────────
+# Update these when reusing the dashboard for a new event.
+EVENT_CONFIG = {
+    'name': 'Marathon',            # shown in email header
+    'date': date(2026, 3, 1),      # event date
+    'recovery_days': 7,            # how many days to track
+    'rhr_baseline': 43.2,          # pre-event resting heart rate
+    'email_to': 'smangalick@gmail.com',
+}
 
+# ── Send timing ─────────────────────────────────────────────────────
+# "evening" → guidance says "Tomorrow", subject says "Evening Recovery"
+# "morning" → guidance says "Today", subject says "Recovery"
+SEND_TIMING = "evening"   # change to "morning" if cron moves back to AM
+
+# ── Readiness guidance text ─────────────────────────────────────────
+# Edit these strings to change what the email recommends.
+# {prefix} is replaced with "Tomorrow:" or "Today:" based on SEND_TIMING.
+READINESS_CONFIG = {
+    'red': {
+        'color': '#dc3545',
+        'label': 'Rest Day',
+        'message': 'Multiple recovery indicators are poor. Your body needs more time.',
+        'guidance': '{prefix} Complete rest. Walk only. Prioritize sleep, hydration, and protein.',
+    },
+    'yellow': {
+        'color': '#ffc107',
+        'label': 'Light Movement Only',
+        'message': 'Recovery is progressing but not there yet.',
+        'guidance': '{prefix} Easy walk (20-30 min) or gentle bike (Zone 1, HR under 110). No running.',
+    },
+    'green': {
+        'color': '#28a745',
+        'label': 'Easy Activity OK',
+        'message': 'Recovery metrics are trending back to normal.',
+        'guidance': '{prefix} Easy run/bike (30-45 min, Zone 2). Keep it conversational. No intensity.',
+    },
+    'insufficient': {
+        'color': '#ffc107',
+        'label': 'Insufficient Data',
+        'message': 'Not enough metrics available to assess readiness.',
+        'guidance': 'Take it easy until we have more data.',
+    },
+}
+
+# ── Readiness thresholds ────────────────────────────────────────────
+THRESHOLDS = {
+    'rhr_green': 3,      # delta from baseline
+    'rhr_yellow': 5,
+    'bb_green': 80,
+    'bb_yellow': 60,
+    'sleep_score_green': 75,
+    'sleep_score_yellow': 60,
+    'sleep_hr_green': 52,
+    'sleep_hr_yellow': 56,
+    'rem_green': 60,     # minutes
+    'rem_yellow': 40,
+}
+
+# ── Derived helpers ─────────────────────────────────────────────────
+def _guidance_prefix() -> str:
+    return "Tomorrow:" if SEND_TIMING == "evening" else "Today:"
+
+def _guidance_label() -> str:
+    return "Tomorrow's guidance:" if SEND_TIMING == "evening" else "Today's guidance:"
+
+def _subject_prefix() -> str:
+    return "Evening " if SEND_TIMING == "evening" else ""
+
+
+# ═══════════════════════════════════════════════════════════════════
+# Data fetching & loading
+# ═══════════════════════════════════════════════════════════════════
 
 def fetch_data() -> bool:
     """Fetch recent Garmin data."""
@@ -49,9 +116,10 @@ def fetch_data() -> bool:
         if not client.login():
             logger.error("Failed to login to Garmin Connect")
             return False
-        client.fetch_daily_summaries(days=RECOVERY_DAYS, force=True)
-        client.fetch_sleep(days=RECOVERY_DAYS, force=True)
-        client.fetch_heart_rate(days=RECOVERY_DAYS, force=True)
+        days = EVENT_CONFIG['recovery_days']
+        client.fetch_daily_summaries(days=days, force=True)
+        client.fetch_sleep(days=days, force=True)
+        client.fetch_heart_rate(days=days, force=True)
         logger.info("Data fetch complete")
         return True
     except Exception as e:
@@ -102,8 +170,14 @@ def get_stat(day: dict, key: str, default=None):
     return default
 
 
+# ═══════════════════════════════════════════════════════════════════
+# Metric extraction & readiness scoring
+# ═══════════════════════════════════════════════════════════════════
+
 def extract_metrics(summaries: list[dict], sleeps: list[dict]) -> list[dict]:
     """Extract daily recovery metrics from raw data."""
+    rhr_baseline = EVENT_CONFIG['rhr_baseline']
+
     sleep_by_date = {}
     for s in sleeps:
         d = s.get('_date', '')
@@ -149,7 +223,7 @@ def extract_metrics(summaries: list[dict], sleeps: list[dict]) -> list[dict]:
         days.append({
             'date': dt,
             'rhr': rhr,
-            'rhr_delta': round(rhr - RHR_BASELINE, 1) if rhr else None,
+            'rhr_delta': round(rhr - rhr_baseline, 1) if rhr else None,
             'bb_wake': bb_wake,
             'bb_highest': bb_highest,
             'bb_lowest': bb_lowest,
@@ -173,99 +247,95 @@ def calculate_readiness(today: dict) -> dict:
     sleep_score = today.get('sleep_score')
     sleep_hr = today.get('sleep_hr')
     rem_min = today.get('rem_min')
+    t = THRESHOLDS
 
     scores = []  # list of (score, reason) where 0=red, 1=yellow, 2=green
 
     # RHR
     if rhr_delta is not None:
-        if rhr_delta <= 3:
+        if rhr_delta <= t['rhr_green']:
             scores.append((2, f"RHR {rhr} bpm (+{rhr_delta} from baseline) — near normal"))
-        elif rhr_delta <= 5:
+        elif rhr_delta <= t['rhr_yellow']:
             scores.append((1, f"RHR {rhr} bpm (+{rhr_delta} from baseline) — still elevated"))
         else:
             scores.append((0, f"RHR {rhr} bpm (+{rhr_delta} from baseline) — significantly elevated"))
 
     # Body Battery
     if bb_wake is not None:
-        if bb_wake >= 80:
+        if bb_wake >= t['bb_green']:
             scores.append((2, f"Body Battery at wake: {bb_wake} — strong recharge"))
-        elif bb_wake >= 60:
+        elif bb_wake >= t['bb_yellow']:
             scores.append((1, f"Body Battery at wake: {bb_wake} — partial recharge"))
         else:
             scores.append((0, f"Body Battery at wake: {bb_wake} — poor recharge"))
 
     # Sleep Score
     if sleep_score is not None:
-        if sleep_score >= 75:
+        if sleep_score >= t['sleep_score_green']:
             scores.append((2, f"Sleep score: {sleep_score} — good quality"))
-        elif sleep_score >= 60:
+        elif sleep_score >= t['sleep_score_yellow']:
             scores.append((1, f"Sleep score: {sleep_score} — fair quality"))
         else:
             scores.append((0, f"Sleep score: {sleep_score} — poor quality"))
 
     # Sleep HR
     if sleep_hr is not None:
-        if sleep_hr <= 52:
+        if sleep_hr <= t['sleep_hr_green']:
             scores.append((2, f"Sleep HR: {sleep_hr} bpm — recovered"))
-        elif sleep_hr <= 56:
+        elif sleep_hr <= t['sleep_hr_yellow']:
             scores.append((1, f"Sleep HR: {sleep_hr} bpm — still elevated"))
         else:
             scores.append((0, f"Sleep HR: {sleep_hr} bpm — high, body still stressed"))
 
     # REM sleep
     if rem_min is not None:
-        if rem_min >= 60:
+        if rem_min >= t['rem_green']:
             scores.append((2, f"REM sleep: {rem_min} min — good"))
-        elif rem_min >= 40:
+        elif rem_min >= t['rem_yellow']:
             scores.append((1, f"REM sleep: {rem_min} min — below optimal"))
         else:
             scores.append((0, f"REM sleep: {rem_min} min — significantly low"))
 
     if not scores:
+        cfg = READINESS_CONFIG['insufficient']
         return {
             'level': 'yellow',
-            'color': '#ffc107',
-            'label': 'Insufficient Data',
-            'message': 'Not enough metrics available to assess readiness.',
+            'color': cfg['color'],
+            'label': cfg['label'],
+            'message': cfg['message'],
             'details': [],
-            'guidance': 'Take it easy until we have more data.',
+            'guidance': cfg['guidance'],
         }
 
     avg_score = sum(s for s, _ in scores) / len(scores)
     red_count = sum(1 for s, _ in scores if s == 0)
     details = [reason for _, reason in scores]
+    prefix = _guidance_prefix()
 
     if red_count >= 2 or avg_score < 0.8:
-        return {
-            'level': 'red',
-            'color': '#dc3545',
-            'label': 'Rest Day',
-            'message': 'Multiple recovery indicators are poor. Your body needs more time.',
-            'details': details,
-            'guidance': 'Complete rest tomorrow. Walk only. Prioritize sleep, hydration, and protein.',
-        }
+        level = 'red'
     elif avg_score < 1.5:
-        return {
-            'level': 'yellow',
-            'color': '#ffc107',
-            'label': 'Light Movement Only',
-            'message': 'Recovery is progressing but not there yet.',
-            'details': details,
-            'guidance': 'Tomorrow: Easy walk (20-30 min) or gentle bike (Zone 1, HR under 110). No running.',
-        }
+        level = 'yellow'
     else:
-        return {
-            'level': 'green',
-            'color': '#28a745',
-            'label': 'Easy Activity OK',
-            'message': 'Recovery metrics are trending back to normal.',
-            'details': details,
-            'guidance': 'Tomorrow: Easy run/bike (30-45 min, Zone 2). Keep it conversational. No intensity.',
-        }
+        level = 'green'
 
+    cfg = READINESS_CONFIG[level]
+    return {
+        'level': level,
+        'color': cfg['color'],
+        'label': cfg['label'],
+        'message': cfg['message'],
+        'details': details,
+        'guidance': cfg['guidance'].format(prefix=prefix),
+    }
+
+
+# ═══════════════════════════════════════════════════════════════════
+# Trend helpers
+# ═══════════════════════════════════════════════════════════════════
 
 def trend_arrow(values: list) -> str:
-    """Return trend arrow based on recent values."""
+    """Return trend arrow based on recent values (lower is better)."""
     clean = [v for v in values if v is not None]
     if len(clean) < 2:
         return "—"
@@ -288,17 +358,17 @@ def trend_arrow_higher_better(values: list) -> str:
     return "&#8594;"  # → stable
 
 
-def generate_html(metrics: list[dict], readiness: dict) -> str:
-    """Generate the recovery dashboard HTML email."""
-    today = date.today()
-    recovery_day = (today - MARATHON_DATE).days
-    today_metrics = metrics[-1] if metrics else {}
+# ═══════════════════════════════════════════════════════════════════
+# HTML generation
+# ═══════════════════════════════════════════════════════════════════
 
-    # Build trend rows for the table
-    trend_rows = ""
+def _build_trend_rows(metrics: list[dict], today_iso: str) -> str:
+    """Build HTML table rows for the recovery trend table."""
+    event_date = EVENT_CONFIG['date']
+    rows = ""
     for m in metrics:
         dt = m['date']
-        day_num = (date.fromisoformat(dt) - MARATHON_DATE).days
+        day_num = (date.fromisoformat(dt) - event_date).days
         rhr_str = f"{m['rhr']} <span style='color:#999;font-size:11px;'>(+{m['rhr_delta']})</span>" if m['rhr'] else "—"
         bb_str = str(m['bb_wake']) if m['bb_wake'] else "—"
         sleep_str = str(m['sleep_score']) if m['sleep_score'] else "—"
@@ -306,10 +376,10 @@ def generate_html(metrics: list[dict], readiness: dict) -> str:
         deep_str = f"{m['deep_min']}m" if m['deep_min'] else "—"
         sleep_hr_str = str(m['sleep_hr']) if m['sleep_hr'] else "—"
 
-        is_today = dt == today.isoformat()
+        is_today = dt == today_iso
         row_style = "background-color: #f0f4ff;" if is_today else ""
 
-        trend_rows += f"""
+        rows += f"""
         <tr style="{row_style}">
             <td style="padding:8px 10px;border-bottom:1px solid #eee;font-weight:{'bold' if is_today else 'normal'};">
                 Day {day_num}<br><span style="color:#999;font-size:11px;">{dt}</span>
@@ -321,27 +391,39 @@ def generate_html(metrics: list[dict], readiness: dict) -> str:
             <td style="padding:8px 10px;border-bottom:1px solid #eee;text-align:center;">{rem_str}</td>
             <td style="padding:8px 10px;border-bottom:1px solid #eee;text-align:center;">{deep_str}</td>
         </tr>"""
+    return rows
 
-    # Readiness details
-    details_html = ""
-    for detail in readiness['details']:
-        # Color code based on content
+
+def _build_details_html(details: list[str]) -> str:
+    """Build HTML rows for readiness detail indicators."""
+    html = ""
+    for detail in details:
         if "near normal" in detail or "strong" in detail or "good" in detail or "recovered" in detail:
             dot = "&#9989;"
         elif "still" in detail or "partial" in detail or "fair" in detail or "below" in detail:
             dot = "&#128310;"
         else:
             dot = "&#9888;"
-        details_html += f"<tr><td style='padding:6px 0;'>{dot} {detail}</td></tr>"
+        html += f"<tr><td style='padding:6px 0;'>{dot} {detail}</td></tr>"
+    return html
 
-    # RHR trend values for arrow
-    rhr_values = [m['rhr'] for m in metrics]
-    bb_values = [m['bb_wake'] for m in metrics]
-    sleep_values = [m['sleep_score'] for m in metrics]
 
-    rhr_trend = trend_arrow(rhr_values)
-    bb_trend = trend_arrow_higher_better(bb_values)
-    sleep_trend = trend_arrow_higher_better(sleep_values)
+def generate_html(metrics: list[dict], readiness: dict) -> str:
+    """Generate the recovery dashboard HTML email."""
+    today = date.today()
+    event_date = EVENT_CONFIG['date']
+    event_name = EVENT_CONFIG['name']
+    recovery_days = EVENT_CONFIG['recovery_days']
+    rhr_baseline = EVENT_CONFIG['rhr_baseline']
+    recovery_day = (today - event_date).days
+
+    trend_rows = _build_trend_rows(metrics, today.isoformat())
+    details_html = _build_details_html(readiness['details'])
+    guidance_label = _guidance_label()
+
+    rhr_trend = trend_arrow([m['rhr'] for m in metrics])
+    bb_trend = trend_arrow_higher_better([m['bb_wake'] for m in metrics])
+    sleep_trend = trend_arrow_higher_better([m['sleep_score'] for m in metrics])
 
     html = f"""<!DOCTYPE html>
 <html>
@@ -357,9 +439,9 @@ def generate_html(metrics: list[dict], readiness: dict) -> str:
     <!-- Header -->
     <tr>
         <td style="background:linear-gradient(135deg,#1a1a2e 0%,#16213e 100%);padding:24px;text-align:center;">
-            <h1 style="color:#fff;margin:0 0 4px 0;font-size:22px;">Marathon Recovery Dashboard</h1>
+            <h1 style="color:#fff;margin:0 0 4px 0;font-size:22px;">{event_name} Recovery Dashboard</h1>
             <p style="color:rgba(255,255,255,0.7);margin:0;font-size:14px;">
-                Day {recovery_day} of {RECOVERY_DAYS} | {today.strftime('%B %d, %Y')}
+                Day {recovery_day} of {recovery_days} | {today.strftime('%B %d, %Y')}
             </p>
         </td>
     </tr>
@@ -398,7 +480,7 @@ def generate_html(metrics: list[dict], readiness: dict) -> str:
             <table width="100%" cellpadding="0" cellspacing="0" style="background-color:#f8f9fa;border-radius:8px;">
                 <tr>
                     <td style="padding:14px 16px;">
-                        <strong style="color:#333;">Tomorrow's guidance:</strong>
+                        <strong style="color:#333;">{guidance_label}</strong>
                         <span style="color:#555;"> {readiness['guidance']}</span>
                     </td>
                 </tr>
@@ -438,7 +520,7 @@ def generate_html(metrics: list[dict], readiness: dict) -> str:
     <tr>
         <td style="padding:0 24px 24px 24px;">
             <h2 style="color:#333;font-size:16px;margin:0 0 12px 0;border-bottom:2px solid #eee;padding-bottom:8px;">
-                Recovery Trend (since marathon)
+                Recovery Trend (since {event_name.lower()})
             </h2>
             <table width="100%" cellpadding="0" cellspacing="0" style="font-size:13px;">
                 <tr style="background-color:#f8f9fa;">
@@ -453,7 +535,7 @@ def generate_html(metrics: list[dict], readiness: dict) -> str:
                 {trend_rows}
             </table>
             <p style="color:#999;font-size:11px;margin:8px 0 0 0;">
-                RHR baseline: {RHR_BASELINE} bpm | Target: RHR within 3 bpm of baseline, BB wake &gt; 80, sleep score &gt; 75
+                RHR baseline: {rhr_baseline} bpm | Target: RHR within 3 bpm of baseline, BB wake &gt; 80, sleep score &gt; 75
             </p>
         </td>
     </tr>
@@ -476,16 +558,16 @@ def generate_html(metrics: list[dict], readiness: dict) -> str:
     return html
 
 
+# ═══════════════════════════════════════════════════════════════════
+# Email sending
+# ═══════════════════════════════════════════════════════════════════
+
 def send_email(to_address: str, subject: str, html_body: str) -> bool:
     """Send email using Gmail API or SMTP fallback."""
-    # Try Gmail API first
     if _send_via_gmail_api(to_address, subject, html_body):
         return True
-
-    # Try SMTP fallback with app password
     if _send_via_smtp(to_address, subject, html_body):
         return True
-
     return False
 
 
@@ -504,7 +586,6 @@ def _send_via_gmail_api(to_address: str, subject: str, html_body: str) -> bool:
         with open(creds_path, 'r') as f:
             creds_data = json.load(f)
 
-        # Build credentials — need client_id and client_secret for refresh
         token = creds_data.get('access_token') or creds_data.get('token')
         refresh_token = creds_data.get('refresh_token')
         client_id = creds_data.get('client_id')
@@ -522,7 +603,6 @@ def _send_via_gmail_api(to_address: str, subject: str, html_body: str) -> bool:
             client_secret=client_secret,
         )
 
-        # Try refresh if we have all the fields
         if not credentials.valid and refresh_token and client_id and client_secret:
             logger.info("Refreshing expired credentials...")
             credentials.refresh(Request())
@@ -576,17 +656,23 @@ def _send_via_smtp(to_address: str, subject: str, html_body: str) -> bool:
         return False
 
 
+# ═══════════════════════════════════════════════════════════════════
+# Main
+# ═══════════════════════════════════════════════════════════════════
+
 def main():
+    event_date = EVENT_CONFIG['date']
+    recovery_days = EVENT_CONFIG['recovery_days']
+    email_to = EVENT_CONFIG['email_to']
+
     logger.info("=" * 50)
     logger.info("Recovery Dashboard")
     logger.info(f"Date: {date.today().isoformat()}")
-    logger.info(f"Recovery day: {(date.today() - MARATHON_DATE).days}")
+    logger.info(f"Recovery day: {(date.today() - event_date).days}")
     logger.info("=" * 50)
 
-    # Fetch fresh data
     fetch_data()
 
-    # Load and analyze
     summaries = load_daily_summaries()
     sleeps = load_sleep_data()
 
@@ -599,8 +685,8 @@ def main():
         logger.error("Could not extract metrics")
         sys.exit(1)
 
-    # Filter to post-marathon only
-    metrics = [m for m in metrics if m['date'] >= MARATHON_DATE.isoformat()]
+    # Filter to post-event only
+    metrics = [m for m in metrics if m['date'] >= event_date.isoformat()]
 
     # Use most recent day that actually has data (today may be incomplete)
     today_metrics = {}
@@ -612,26 +698,24 @@ def main():
     # Remove days with zero data from the display
     metrics = [m for m in metrics if m.get('rhr') is not None or m.get('bb_wake') is not None or m.get('sleep_score') is not None]
 
-    logger.info(f"Metrics for {len(metrics)} days post-marathon")
+    logger.info(f"Metrics for {len(metrics)} days post-event")
     logger.info(f"Using day {today_metrics.get('date', 'unknown')} for readiness")
 
-    # Calculate readiness
     readiness = calculate_readiness(today_metrics)
     logger.info(f"Readiness: {readiness['level']} - {readiness['label']}")
 
-    # Generate email
-    recovery_day = (date.today() - MARATHON_DATE).days
-    subject = f"Evening Recovery Day {recovery_day}: {readiness['label']} {'🟢' if readiness['level'] == 'green' else '🟡' if readiness['level'] == 'yellow' else '🔴'}"
+    recovery_day = (date.today() - event_date).days
+    subject_prefix = _subject_prefix()
+    emoji = {'green': '\U0001f7e2', 'yellow': '\U0001f7e1', 'red': '\U0001f534'}[readiness['level']]
+    subject = f"{subject_prefix}Recovery Day {recovery_day}: {readiness['label']} {emoji}"
 
     html = generate_html(metrics, readiness)
 
-    # Send
-    success = send_email(EMAIL_TO, subject, html)
+    success = send_email(email_to, subject, html)
     if success:
         logger.info("Recovery dashboard email sent!")
     else:
         logger.error("Failed to send email")
-        # Save HTML locally as fallback
         output_path = PROJECT_DIR / "recovery_dashboard.html"
         with open(output_path, 'w') as f:
             f.write(html)
