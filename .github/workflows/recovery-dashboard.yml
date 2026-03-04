@@ -37,7 +37,7 @@ jobs:
         env:
           USER_CONFIG_B64: ${{ secrets.USER_CONFIG_B64 }}
         run: |
-          python3 -c "import os,base64; open('user_config.json','w').write(base64.b64decode(os.environ['USER_CONFIG_B64'].strip()).decode())"
+          python3 -c "import os,base64; open('data/user_config.json','w').write(base64.b64decode(os.environ['USER_CONFIG_B64'].strip()).decode())"
 
       - name: Create data directories
         run: mkdir -p data/{daily_summaries,sleep,heart_rate,vo2max,activities}
