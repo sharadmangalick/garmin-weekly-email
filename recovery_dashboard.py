@@ -10,6 +10,7 @@ import json
 import logging
 import sys
 from datetime import date, datetime, timedelta
+from zoneinfo import ZoneInfo
 from pathlib import Path
 
 PROJECT_DIR = Path(__file__).parent
@@ -108,6 +109,15 @@ THRESHOLDS = {
     'rem_green': 60,
     'rem_yellow': 40,
 }
+
+
+# ── Timezone-aware "today" ─────────────────────────────────────────
+# GitHub Actions runs in UTC. Use the user's timezone so day/phase are correct.
+USER_TZ = ZoneInfo("America/Los_Angeles")
+
+def _today() -> date:
+    """Return today's date in the user's timezone."""
+    return datetime.now(USER_TZ).date()
 
 
 # ═══════════════════════════════════════════════════════════════════
@@ -452,7 +462,7 @@ def get_effective_phase(calendar_phase: int, gate_result: dict) -> int:
 def get_tomorrows_workout(phase_num: int, tomorrow: date = None) -> dict:
     """Get tomorrow's workout based on phase and day of week."""
     if tomorrow is None:
-        tomorrow = date.today() + timedelta(days=1)
+        tomorrow = _today() + timedelta(days=1)
 
     day_of_week = tomorrow.weekday()  # 0=Monday
     day_names = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
@@ -653,7 +663,7 @@ def _build_tomorrows_plan_html(workout: dict) -> str:
 
 def generate_html(metrics: list[dict], readiness: dict, phase_info: dict, gate_result: dict, workout: dict) -> str:
     """Generate the ramp-up coach HTML email."""
-    today = date.today()
+    today = _today()
     rhr_baseline = RAMPUP_CONFIG['rhr_baseline']
     day_num = phase_info['day_num']
     effective_phase = phase_info['effective_phase']
@@ -813,7 +823,7 @@ def generate_html(metrics: list[dict], readiness: dict, phase_info: dict, gate_r
                 Disable: <code style="background:#eee;padding:2px 6px;border-radius:3px;font-size:10px;">gh workflow disable recovery-dashboard.yml --repo sharadmangalick/garmin-weekly-email</code>
             </p>
             <p style="color:#bbb;font-size:11px;margin:0;">
-                Generated {datetime.now().strftime('%B %d, %Y at %I:%M %p')} | Ramp-Up Coach
+                Generated {datetime.now(USER_TZ).strftime('%B %d, %Y at %I:%M %p')} | Ramp-Up Coach
             </p>
         </td>
     </tr>
@@ -836,7 +846,7 @@ def main():
     user_cfg = UserConfig()
     email_to = user_cfg.email
 
-    today = date.today()
+    today = _today()
 
     logger.info("=" * 50)
     logger.info("Ramp-Up Coach")
