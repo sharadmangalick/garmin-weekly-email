@@ -1,5 +1,6 @@
 """Configuration handling for Garmin Data Analyzer."""
 
+import logging
 import os
 from pathlib import Path
 from dotenv import load_dotenv
@@ -67,6 +68,26 @@ class Config:
         self.daily_summaries_dir.mkdir(parents=True, exist_ok=True)
         self.vo2max_dir.mkdir(parents=True, exist_ok=True)
         self.email_queue_dir.mkdir(parents=True, exist_ok=True)
+
+
+def setup_logging(name: str) -> logging.Logger:
+    """Configure logging for a script. Logs to both file and stderr.
+
+    Usage:
+        logger = setup_logging("recovery_dashboard")
+    """
+    log_dir = Path(__file__).parent / "logs"
+    log_dir.mkdir(exist_ok=True)
+
+    logging.basicConfig(
+        level=logging.INFO,
+        format='%(asctime)s - %(levelname)s - %(message)s',
+        handlers=[
+            logging.FileHandler(log_dir / f"{name}.log"),
+            logging.StreamHandler()
+        ]
+    )
+    return logging.getLogger(name)
 
 
 # Global config instance

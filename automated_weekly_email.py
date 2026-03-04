@@ -14,35 +14,21 @@ import json
 import logging
 import os
 import sys
-import base64
 from datetime import datetime
 from pathlib import Path
-from email.mime.text import MIMEText
-from email.mime.multipart import MIMEMultipart
 
 # Add project to path
 PROJECT_DIR = Path(__file__).parent
 sys.path.insert(0, str(PROJECT_DIR))
 
-from config import config
+from config import config, setup_logging
+from email_sender import send_email
 from user_config import UserConfig
 from data_analyzer import GarminDataAnalyzer
 from training_plan_generator import TrainingPlanGenerator
 from email_generator import EmailGenerator
 
-# Set up logging
-LOG_DIR = PROJECT_DIR / "logs"
-LOG_DIR.mkdir(exist_ok=True)
-
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.FileHandler(LOG_DIR / "weekly_email.log"),
-        logging.StreamHandler()
-    ]
-)
-logger = logging.getLogger(__name__)
+logger = setup_logging("weekly_email")
 
 
 def fetch_garmin_data(days: int = 14) -> bool:
@@ -97,49 +83,6 @@ def generate_email(user_config: UserConfig, analysis: dict, training_plan: dict)
         analysis,
         training_plan
     )
-
-
-def send_email(to_address: str, subject: str, html_body: str) -> bool:
-    """Send email using Gmail API with saved credentials."""
-    try:
-        from google.oauth2.credentials import Credentials
-        from googleapiclient.discovery import build
-
-        # Load credentials
-        creds_path = Path.home() / ".gmail-mcp" / "credentials.json"
-        if not creds_path.exists():
-            logger.error("Gmail credentials not found. Run Gmail MCP auth first.")
-            return False
-
-        with open(creds_path, 'r') as f:
-            creds_data = json.load(f)
-
-        credentials = Credentials(
-            token=creds_data.get('access_token'),
-            refresh_token=creds_data.get('refresh_token'),
-            token_uri='https://oauth2.googleapis.com/token',
-            client_id=creds_data.get('client_id'),
-            client_secret=creds_data.get('client_secret')
-        )
-
-        # Create message
-        message = MIMEMultipart('alternative')
-        message['to'] = to_address
-        message['subject'] = subject
-        html_part = MIMEText(html_body, 'html')
-        message.attach(html_part)
-
-        # Encode and send
-        raw = base64.urlsafe_b64encode(message.as_bytes()).decode()
-        service = build('gmail', 'v1', credentials=credentials)
-        result = service.users().messages().send(userId='me', body={'raw': raw}).execute()
-
-        logger.info(f"Email sent successfully! Message ID: {result['id']}")
-        return True
-
-    except Exception as e:
-        logger.error(f"Failed to send email: {e}")
-        return False
 
 
 def apply_goal_overrides(user_config: UserConfig) -> None:

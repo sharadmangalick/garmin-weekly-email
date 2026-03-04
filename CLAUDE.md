@@ -8,14 +8,26 @@ Automated Garmin health emails via GitHub Actions. Two main workflows:
 ## Key Files
 | File | Purpose |
 |------|---------|
-| `recovery_dashboard.py` | Daily recovery email — config, scoring, HTML, sending |
+| `recovery_dashboard.py` | Daily recovery email — config, scoring, HTML generation |
 | `automated_weekly_email.py` | Weekly training plan email |
+| `email_sender.py` | **Shared** email sending (Gmail API + SMTP fallback) |
+| `config.py` | Shared config + `setup_logging(name)` helper |
+| `user_config.py` | User preferences (name, email, goals) — single source of truth for recipient |
 | `garmin_client.py` | OOP Garmin Connect client (login, fetch data) |
 | `data_analyzer.py` | Health metric analysis |
-| `config.py` | Shared project configuration |
-| `user_config.py` | User preferences |
-| `.github/workflows/recovery-dashboard.yml` | Cron schedule for recovery email |
+| `.github/workflows/recovery-dashboard.yml` | Cron schedule for recovery email (9 PM PDT) |
 | `.github/workflows/weekly-email.yml` | Cron schedule for weekly email |
+
+## Shared Modules
+
+### `email_sender.py`
+Both scripts import `send_email(to, subject, html)` from here. It tries Gmail API first (OAuth from `~/.gmail-mcp/credentials.json`), then falls back to SMTP (`GMAIL_APP_PASSWORD` env var). Change email logic in this one file.
+
+### `config.py` — `setup_logging(name)`
+Call `logger = setup_logging("my_script")` instead of copy-pasting logging boilerplate. Logs to `logs/{name}.log` + stderr.
+
+### `user_config.py` — recipient email
+Both scripts get the recipient email from `UserConfig().email`. No hardcoded email addresses in individual scripts.
 
 ## Recovery Dashboard — How to Make Common Changes
 
@@ -27,7 +39,6 @@ EVENT_CONFIG = {
     'date': date(2026, 6, 15),
     'recovery_days': 5,
     'rhr_baseline': 42.0,
-    'email_to': 'smangalick@gmail.com',
 }
 ```
 
