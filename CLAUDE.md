@@ -23,9 +23,12 @@ GitHub Pages is disabled on this repo.
 
 ## Ramp-Up Coach — Phase System
 
-### Current Event
-- **Marathon** on March 1, 2026
+### Current Goals (post-marathon, March 2026+)
+- **Build aerobic base** — Zone 2 running focus, fix the Z3 trap (was 53% Z3, only 18% Z2)
+- **Get faster** — use base to improve speed over time
+- **Get stronger** — weight training is a primary goal, not just supplemental
 - RHR baseline: 43.2 bpm
+- Completed Napa marathon March 1, 2026 (26.5 mi, 10:42/mile avg, HR 147)
 - Configured in `RAMPUP_CONFIG` at top of `recovery_dashboard.py`
 
 ### Phases
@@ -127,6 +130,9 @@ gh workflow run recovery-dashboard.yml --repo sharadmangalick/garmin-weekly-emai
 gh workflow disable recovery-dashboard.yml --repo sharadmangalick/garmin-weekly-email
 gh workflow enable recovery-dashboard.yml --repo sharadmangalick/garmin-weekly-email
 ```
+
+## User Preferences
+- Display distances in **miles** (not km) in all analysis output and emails
 
 ## Known Issues / Tech Debt
 - **`SEND_TIMING` is dead code** — defined but never referenced after the ramp-up refactor

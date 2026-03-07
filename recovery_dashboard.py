@@ -138,6 +138,7 @@ def fetch_data() -> bool:
         client.fetch_daily_summaries(days=days, force=True)
         client.fetch_sleep(days=days, force=True)
         client.fetch_heart_rate(days=days, force=True)
+        client.fetch_activities(days=days, force=True)
         logger.info("Data fetch complete")
         return True
     except Exception as e:
@@ -186,6 +187,73 @@ def get_stat(day: dict, key: str, default=None):
     if 'stats' in day and isinstance(day['stats'], dict):
         return day['stats'].get(key, default)
     return default
+
+
+def load_activities() -> list[dict]:
+    """Load activity JSON files."""
+    activities = []
+    activities_dir = config.data_dir / "activities"
+    if not activities_dir.exists():
+        return activities
+    for f in sorted(activities_dir.glob("*.json")):
+        try:
+            with open(f) as fh:
+                activities.append(json.load(fh))
+        except (json.JSONDecodeError, IOError):
+            continue
+    return activities
+
+
+def get_run_zone_distribution(activities: list[dict]) -> dict | None:
+    """Compute aggregate HR zone distribution from recent running activities.
+
+    Returns dict with zone_pcts (1-5), run_count, total_minutes, and per-run details,
+    or None if no running data is available.
+    """
+    zone_totals = {i: 0.0 for i in range(1, 6)}
+    total_secs = 0.0
+    run_details = []
+
+    for a in activities:
+        atype = a.get('activityType', {}).get('typeKey', '')
+        if 'running' not in atype.lower():
+            continue
+
+        zone_secs = {}
+        has_zones = False
+        for i in range(1, 6):
+            val = a.get(f'hrTimeInZone_{i}', 0) or 0
+            zone_secs[i] = val
+            if val > 0:
+                has_zones = True
+
+        if not has_zones:
+            continue
+
+        run_total = sum(zone_secs.values())
+        if run_total <= 0:
+            continue
+
+        for i in range(1, 6):
+            zone_totals[i] += zone_secs[i]
+        total_secs += run_total
+
+        distance_m = a.get('distance', 0) or 0
+        run_details.append({
+            'date': (a.get('startTimeLocal') or '')[:10],
+            'distance_mi': round(distance_m / 1609.34, 1),
+            'z2_pct': round(zone_secs[2] / run_total * 100),
+        })
+
+    if total_secs <= 0:
+        return None
+
+    return {
+        'zone_pcts': {i: round(zone_totals[i] / total_secs * 100) for i in range(1, 6)},
+        'run_count': len(run_details),
+        'total_minutes': round(total_secs / 60),
+        'runs': run_details,
+    }
 
 
 # ═══════════════════════════════════════════════════════════════════
@@ -648,6 +716,98 @@ def _build_gate_html(gate_result: dict, phase_info: dict) -> str:
     {hold_banner}"""
 
 
+def _build_zone_distribution_html(zone_data: dict | None) -> str:
+    """Build HTML for running zone distribution section."""
+    if not zone_data:
+        return ""
+
+    pcts = zone_data['zone_pcts']
+    z2_pct = pcts[2]
+
+    # Color the Z2 bar green if >=50%, yellow if 30-49%, red if <30%
+    zone_colors = {
+        1: '#90caf9',  # light blue
+        2: '#66bb6a',  # green
+        3: '#ffa726',  # orange
+        4: '#ef5350',  # red
+        5: '#ab47bc',  # purple
+    }
+
+    # Z2 nudge message
+    if z2_pct >= 50:
+        nudge = "&#9989; Great Z2 adherence — keep it up!"
+        nudge_color = "#2e7d32"
+    elif z2_pct >= 30:
+        nudge = "&#128310; Getting there — try slowing 15-20 sec/mi on easy days"
+        nudge_color = "#f57f17"
+    else:
+        nudge = "&#9888; Most running is Z3+ — slow down on easy days (target ~9:20-9:30/mi)"
+        nudge_color = "#c62828"
+
+    # Bar chart
+    bars_html = ""
+    for i in range(1, 6):
+        pct = pcts[i]
+        color = zone_colors[i]
+        width = max(pct, 2)  # minimum width for visibility
+        bars_html += f"""
+        <tr>
+            <td style="padding:3px 8px;font-size:12px;color:#666;width:50px;">Zone {i}</td>
+            <td style="padding:3px 0;">
+                <div style="background-color:{color};width:{width}%;height:18px;border-radius:3px;display:inline-block;min-width:20px;"></div>
+                <span style="font-size:12px;color:#666;margin-left:6px;">{pct}%</span>
+            </td>
+        </tr>"""
+
+    # Per-run Z2% sparkline (last 5 runs)
+    recent_runs = zone_data['runs'][-5:]
+    run_rows = ""
+    for r in recent_runs:
+        z2 = r['z2_pct']
+        z2_color = "#2e7d32" if z2 >= 50 else "#f57f17" if z2 >= 30 else "#c62828"
+        run_rows += f"""
+        <tr>
+            <td style="padding:2px 8px;font-size:11px;color:#999;">{r['date']}</td>
+            <td style="padding:2px 8px;font-size:11px;color:#999;">{r['distance_mi']} mi</td>
+            <td style="padding:2px 8px;font-size:11px;color:{z2_color};font-weight:bold;">{z2}% Z2</td>
+        </tr>"""
+
+    return f"""
+    <table width="100%" cellpadding="0" cellspacing="0">
+        {bars_html}
+    </table>
+    <p style="font-size:13px;color:{nudge_color};margin:10px 0 6px 0;font-weight:bold;">
+        {nudge}
+    </p>
+    <p style="font-size:11px;color:#999;margin:0 0 8px 0;">
+        Based on {zone_data['run_count']} runs ({zone_data['total_minutes']} min total)
+    </p>
+    <table width="100%" cellpadding="0" cellspacing="0" style="margin-top:4px;">
+        <tr style="border-bottom:1px solid #eee;">
+            <td style="padding:2px 8px;font-size:10px;color:#bbb;">Date</td>
+            <td style="padding:2px 8px;font-size:10px;color:#bbb;">Dist</td>
+            <td style="padding:2px 8px;font-size:10px;color:#bbb;">Z2</td>
+        </tr>
+        {run_rows}
+    </table>"""
+
+
+def _build_zone_section_html(zone_data: dict | None) -> str:
+    """Build the full zone distribution email section (header + content)."""
+    if not zone_data:
+        return ""
+    zone_html = _build_zone_distribution_html(zone_data)
+    return f"""
+    <tr>
+        <td style="padding:0 24px 20px 24px;">
+            <h2 style="color:#333;font-size:16px;margin:0 0 12px 0;border-bottom:2px solid #eee;padding-bottom:8px;">
+                Running Zone Distribution
+            </h2>
+            {zone_html}
+        </td>
+    </tr>"""
+
+
 def _build_tomorrows_plan_html(workout: dict) -> str:
     """Build HTML for tomorrow's plan card."""
     exercise_table = _build_workout_html(workout)
@@ -668,7 +828,7 @@ def _build_tomorrows_plan_html(workout: dict) -> str:
     </table>"""
 
 
-def generate_html(metrics: list[dict], readiness: dict, phase_info: dict, gate_result: dict, workout: dict) -> str:
+def generate_html(metrics: list[dict], readiness: dict, phase_info: dict, gate_result: dict, workout: dict, zone_data: dict | None = None) -> str:
     """Generate the ramp-up coach HTML email."""
     today = _today()
     rhr_baseline = RAMPUP_CONFIG['rhr_baseline']
@@ -767,6 +927,9 @@ def generate_html(metrics: list[dict], readiness: dict, phase_info: dict, gate_r
 
     <!-- Gate Check (phases 2+) -->
     {gate_section}
+
+    <!-- Zone Distribution -->
+    {_build_zone_section_html(zone_data)}
 
     <!-- Trend Summary Cards -->
     <tr>
@@ -917,12 +1080,20 @@ def main():
     workout = get_tomorrows_workout(effective_phase)
     logger.info(f"Tomorrow: {workout['day_name']} — {workout['label']}")
 
+    # Zone distribution from recent runs (last 14 days to match fetch window)
+    activities = load_activities()
+    cutoff = (today - timedelta(days=14)).isoformat()
+    recent_activities = [a for a in activities if (a.get('startTimeLocal') or '') >= cutoff]
+    zone_data = get_run_zone_distribution(recent_activities)
+    if zone_data:
+        logger.info(f"Zone distribution from {zone_data['run_count']} runs: Z2={zone_data['zone_pcts'][2]}%")
+
     # Email
     emoji = {'green': '\U0001f7e2', 'yellow': '\U0001f7e1', 'red': '\U0001f534'}[readiness['level']]
     phase_name = RAMPUP_CONFIG['phases'][effective_phase]['name']
     subject = f"Day {phase_info['day_num']} | Phase {effective_phase}: {phase_name} | {readiness['label']} {emoji}"
 
-    html = generate_html(metrics, readiness, phase_info, gate_result, workout)
+    html = generate_html(metrics, readiness, phase_info, gate_result, workout, zone_data)
 
     success = send_email(email_to, subject, html)
     if success:
