@@ -40,8 +40,11 @@ GATE_THRESHOLDS = {
     'rhr_trending_down': True,   # last 3 days avg < previous 3 days avg
     'sleep_hr_max': 53,
     'bb_wake_min': 80,
-    'sleep_score_min': 70,
+    'sleep_score_min': 70,       # informational only — does not block phase advancement
 }
+
+# Gates that are informational only (reported but don't block advancement)
+INFORMATIONAL_GATES = {'sleep_score'}
 
 # ── Strength exercises ────────────────────────────────────────────
 # sets_by_phase: {phase_num: sets} — None means skip in that phase
@@ -419,7 +422,7 @@ def check_gates(metrics: list[dict]) -> dict:
             'detail': "No body battery data",
         })
 
-    # Gate 4: Sleep score > threshold
+    # Gate 4: Sleep score > threshold (informational only — does not block)
     sleep_score = latest.get('sleep_score')
     if sleep_score is not None:
         passed = sleep_score > g['sleep_score_min']
@@ -427,19 +430,21 @@ def check_gates(metrics: list[dict]) -> dict:
             'name': f"Sleep score > {g['sleep_score_min']}",
             'passed': passed,
             'detail': f"Sleep score: {sleep_score}",
+            'informational': True,
         })
     else:
         results.append({
             'name': f"Sleep score > {g['sleep_score_min']}",
             'passed': None,
             'detail': "No sleep score data",
+            'informational': True,
         })
 
-    # Overall: all non-None gates must pass
-    evaluated = [r for r in results if r['passed'] is not None]
+    # Overall: all non-None, non-informational gates must pass
+    evaluated = [r for r in results if r['passed'] is not None and not r.get('informational')]
     all_passed = len(evaluated) > 0 and all(r['passed'] for r in evaluated)
 
-    hold_reasons = [r['name'] for r in results if r['passed'] is False]
+    hold_reasons = [r['name'] for r in results if r['passed'] is False and not r.get('informational')]
     hold_reason = f"Holding due to: {', '.join(hold_reasons)}" if hold_reasons else ""
 
     return {
@@ -605,19 +610,21 @@ def _build_gate_html(gate_result: dict, phase_info: dict) -> str:
     """Build HTML for gate check status section."""
     rows = ""
     for r in gate_result['results']:
+        is_info = r.get('informational', False)
         if r['passed'] is True:
             icon = "&#9989;"
             status = "Pass"
         elif r['passed'] is False:
-            icon = "&#10060;"
-            status = "Fail"
+            icon = "&#128310;" if is_info else "&#10060;"
+            status = "Info" if is_info else "Fail"
         else:
             icon = "&#9898;"
             status = "N/A"
 
+        info_label = " <span style='color:#999;font-size:10px;'>(info only)</span>" if is_info else ""
         rows += f"""
         <tr>
-            <td style="padding:6px 10px;border-bottom:1px solid #eee;">{icon} {r['name']}</td>
+            <td style="padding:6px 10px;border-bottom:1px solid #eee;">{icon} {r['name']}{info_label}</td>
             <td style="padding:6px 10px;border-bottom:1px solid #eee;text-align:center;">{status}</td>
             <td style="padding:6px 10px;border-bottom:1px solid #eee;color:#666;font-size:12px;">{r['detail']}</td>
         </tr>"""
