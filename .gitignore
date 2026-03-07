@@ -8,6 +8,9 @@ data/.garmin_session
 # Cached data
 data/
 
+# Preview files
+*.html
+
 # Logs
 logs/
 
