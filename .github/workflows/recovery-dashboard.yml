@@ -1,9 +1,9 @@
 name: Daily Ramp-Up Coach
 
 on:
-  # Run daily at 9:00 PM Pacific (04:00 UTC next day)
+  # Run daily ~8:30 PM Pacific (03:30 UTC) — GH Actions delays ~15-75 min, targets ~9 PM inbox
   schedule:
-    - cron: '0 4 * * *'
+    - cron: '30 3 * * *'
 
   # Allow manual trigger
   workflow_dispatch:
