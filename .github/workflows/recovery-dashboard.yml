@@ -1,11 +1,11 @@
 name: Daily Ramp-Up Coach
 
 on:
-  # Run daily ~8:30 PM Pacific (03:30 UTC) — GH Actions delays ~15-75 min, targets ~9 PM inbox
-  schedule:
-    - cron: '30 3 * * *'
+  # Disabled — post-marathon ramp-up complete (April 2026)
+  # schedule:
+  #   - cron: '30 3 * * *'
 
-  # Allow manual trigger
+  # Allow manual trigger if needed
   workflow_dispatch:
 
 jobs:
